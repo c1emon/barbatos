@@ -46,15 +46,22 @@ if is_dry_run; then
 fi
 
 install_dependencies() {
-    $sh_c 'apt-get install -y curl >/dev/null'
+    $sh_c 'apt update >/dev/null'
+    $sh_c 'apt -y upgrade >/dev/null'
+    $sh_c 'apt -y install python3-pip >/dev/null'
 }
 
 install_ovs() {
-    $sh_c 'apt-get install -y openvswitch-switch >/dev/null'
+    $sh_c 'apt -y install openvswitch-switch >/dev/null'
 }
 
 install_ruy() {
+	# bug fix: 
+	# ImportError: cannot import name 'ALREADY_HANDLED' from 'eventlet.wsgi' (/usr/local/lib/python3.8/dist-packages/eventlet/wsgi.py)
+	$sh_c "pip3 install eventlet==0.30.2 $PIP_SRC >/dev/null"
     $sh_c "pip3 install ryu $PIP_SRC >/dev/null"
+    echo "Ryu sdn controller installed"
+    echo "To start a ryu app: ryu-manager yourapp.py"
 }
 
 install_dependencies

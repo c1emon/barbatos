@@ -19,10 +19,8 @@ command_exists() {
 	command -v "$@" > /dev/null 2>&1
 }
 
-user="$(id -un 2>/dev/null || true)"
-
 sh_c='sh -c'
-if [ "$user" != 'root' ]; then
+if [ "$(id -un 2>/dev/null || true)" != 'root' ]; then
     if command_exists sudo; then
         sh_c='sudo -E sh -c'
     elif command_exists su; then

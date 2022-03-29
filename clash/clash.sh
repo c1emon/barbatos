@@ -4,8 +4,8 @@ set -e
 
 CLASH_URL="https://github.com/Dreamacro/clash/releases/download/premium/clash-linux-amd64-2022.03.21.gz"
 USER="clash"
-CONF_PATH="/etc/clash"
-CLASH_EXEC_PATH="/usr/local/bin/clash"
+CLASH_PATH="/etc/clash"
+CLASH_EXEC="/usr/local/bin/clash"
 
 DRY_RUN=${DRY_RUN:-}
 while [ $# -gt 0 ]; do
@@ -34,8 +34,7 @@ cmd_exists() {
 
 RUN="sh -c"
 SURUN="sudo -E sh -c"
-USER="$(id -un 2>/dev/null || true)"
-if [ "$USER" != 'root' ]; then
+if [ "$(id -un 2>/dev/null || true)" != 'root' ]; then
     if cmd_exists sudo; then
         SURUN='sudo -E sh -c'
     elif cmd_exists su; then
@@ -55,8 +54,10 @@ install_clash() {
     PKG="/tmp/clash-linux-amd64.gz"
     $RUN "wget $CLASH_URL -O $PKG"
     $RUN "gzip -d $PKG"
-    $SURUN "mv \"/tmp/clash-linux-amd64-2022.03.21\" $CLASH_EXEC_PATH"
-    $RUN "chmod +x $EXEC_PATH"
+    $SURUN "mv \"/tmp/clash-linux-amd64-2022.03.21\" $CLASH_EXEC"
+    $RUN "chmod +x $CLASH_EXEC"
+    $SURUN "mkdir $CLASH_PATH"
+    $SURUN "cp iptables.sh $CLASH_PATH"
 }
 
 add_user() {
@@ -85,11 +86,11 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 Restart=on-failure
 
-ExecStartPre=+/usr/bin/sh $CONF_PATH/clean.sh
-ExecStart=$CLASH_EXEC_PATH -d $CONF_PATH
-ExecStartPost=+/usr/bin/sh $CONF_PATH/iptables.sh
+ExecStartPre=+/usr/bin/sh $CLASH_PATH/iptables.sh clean
+ExecStart=$CLASH_EXEC -d $CLASH_PATH
+ExecStartPost=+/usr/bin/sh $CLASH_PATH/iptables.sh set
 
-ExecStopPost=+/usr/bin/sh $CONF_PATH/clean.sh
+ExecStopPost=+/usr/bin/sh $CLASH_PATH/iptables.sh clean
 
 [Install]
 WantedBy=multi-user.target
@@ -98,4 +99,8 @@ EOF
 $SURUN "echo '$SERVICE' >> $SERVICE_PATH"
 }
 
+run() {
+    $SURUN "-u $USER $CLASH_EXEC -d $CLASH_PATH"
+}
 
+run

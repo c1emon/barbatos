@@ -25,8 +25,7 @@ cmd_exists() {
 }
 
 SURUN="sudo -E sh -c"
-USER="$(id -un 2>/dev/null || true)"
-if [ "$USER" != 'root' ]; then
+if [ "$(id -un 2>/dev/null || true)" != 'root' ]; then
     if cmd_exists sudo; then
         SURUN='sudo -E sh -c'
     elif cmd_exists su; then

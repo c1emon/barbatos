@@ -28,7 +28,7 @@ if [ "$user" != 'root' ]; then
     elif command_exists su; then
         sh_c='su -c'
     else
-        echo "err"
+        echo "insufficient permissions"
         exit 1
     fi
 fi

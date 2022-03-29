@@ -124,6 +124,9 @@ set_ipt_fake_icmp() {
 }
 
 cleanup() {
+    $SURUN "sysctl -w net.ipv4.ip_forward=0"
+    $SURUN "sysctl -w net.ipv4.conf.all.route_localnet=0"
+
     $SURUN "ip rule del fwmark 666 table 666 || true"
     $SURUN "ip route del local 0.0.0.0/0 dev lo table 666 || true"
 

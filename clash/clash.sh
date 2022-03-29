@@ -100,7 +100,6 @@ $SURUN "echo '$SERVICE' >> $SERVICE_PATH"
 }
 
 run() {
-    $SURUN "-u $USER $CLASH_EXEC -d $CLASH_PATH"
+    $SURUN "setcap 'cap_net_admin,cap_net_bind_service=+ep' $CLASH_EXEC"
+    $SURUN "$CLASH_EXEC -d $CLASH_PATH"
 }
-
-run

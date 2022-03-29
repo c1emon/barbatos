@@ -5,6 +5,10 @@ from ryu.controller.handler import set_ev_cls
 from ryu.lib.packet import packet
 import array
 
+# fake-ip mode
+TARGET_NW_DST = "198.18.0.0/16"
+# client mac addresses
+SRC_MAC = []
 class Tproxy(app_manager.RyuApp):
     
     def __init__(self, *_args, **_kwargs):
@@ -14,18 +18,35 @@ class Tproxy(app_manager.RyuApp):
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
+        
 
         # install the table-miss flow entry.
+        # self.add_default_flow(datapath, 100)
+        self.add_normal_flow(datapath)
+
+    def add_default_flow(self, datapath, priority):
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+        
         match = parser.OFPMatch()
         actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER,
                                           ofproto.OFPCML_NO_BUFFER)]
-        self.add_flow(datapath, 0, match, actions)
 
-    def add_flow(self, datapath, priority, match, actions):
+        # construct flow_mod message and send it.
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                             actions)]
+        # msg
+        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                match=match, instructions=inst)
+        # send the instruction to ovs
+        datapath.send_msg(mod)
+        
+    def add_normal_flow(self, datapath, priority=0):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
+        
+        match = parser.OFPMatch()
+        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
 
         # construct flow_mod message and send it.
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,

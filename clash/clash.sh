@@ -1,5 +1,7 @@
 #!/usr/bin/env sh
 
+set -e
+
 CLASH_URL="https://github.com/Dreamacro/clash/releases/download/premium/clash-linux-amd64-2022.03.21.gz"
 USER="clash"
 CONF_PATH="/etc/clash"
@@ -18,7 +20,7 @@ while [ $# -gt 0 ]; do
 	shift $(( $# > 0 ? 1 : 0 ))
 done
 
-IS_DRYRUN() {
+is_dryrun() {
 	if [ -z "$DRY_RUN" ]; then
 		return 1
 	else
@@ -26,7 +28,7 @@ IS_DRYRUN() {
 	fi
 }
 
-CMD_EXISTS() {
+cmd_exists() {
 	command -v "$@" > /dev/null 2>&1
 }
 
@@ -34,17 +36,17 @@ RUN="sh -c"
 SURUN="sudo -E sh -c"
 USER="$(id -un 2>/dev/null || true)"
 if [ "$USER" != 'root' ]; then
-    if CMD_EXISTS sudo; then
+    if cmd_exists sudo; then
         SURUN='sudo -E sh -c'
-    elif CMD_EXISTS su; then
+    elif cmd_exists su; then
         SURUN='su -c'
     else
-        echo "err"
+        echo "insufficient permissions"
         exit 1
     fi
 fi
 
-if IS_DRYRUN; then
+if is_dryrun; then
 	RUN="echo"
     SURUN="echo sudo"
 fi
@@ -83,11 +85,11 @@ CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_BIND_SERVICE CAP_NET_RAW
 Restart=on-failure
 
-ExecStartPre=+$EXEC_PATH $CONF_PATH/clean.sh
+ExecStartPre=+/usr/bin/sh $CONF_PATH/clean.sh
 ExecStart=$CLASH_EXEC_PATH -d $CONF_PATH
-ExecStartPost=+$EXEC_PATH $CONF_PATH/iptables.sh
+ExecStartPost=+/usr/bin/sh $CONF_PATH/iptables.sh
 
-ExecStopPost=+$EXEC_PATH $CONF_PATH/clean.sh
+ExecStopPost=+/usr/bin/sh $CONF_PATH/clean.sh
 
 [Install]
 WantedBy=multi-user.target

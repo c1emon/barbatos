@@ -2,16 +2,18 @@
 
 set -e
 
+PROXY_LOCAL=0
+ACTION=0
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--dry-run)
 			DRY_RUN=1
 			;;
-        --clean)
-            CLEAN=1
+        clean)
+            ACTION=0
             ;;
-        --set)
-            SET=1
+        set)
+            ACTION=1
             ;;
 		--*)
 			echo "Illegal option $1"
@@ -134,5 +136,22 @@ cleanup() {
     $SURUN "iptables -t mangle -F"
     $SURUN "iptables -t mangle -X clash || true"
 
-    $SURUN "iptables -t mangle -X clash_local || true"
+    if $PROXY_LOCAL; then
+        $SURUN "iptables -t mangle -X clash_local || true"
+    fi
 }
+
+case "$ACTION" in
+    0)
+        cleanup
+        ;;
+    1)
+        set_ipt
+        if $PROXY_LOCAL; then
+            set_ipt_local
+        fi
+        ;;
+    *)
+        echo "Illegal option $ACTION"
+        ;;
+esac

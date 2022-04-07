@@ -7,6 +7,7 @@ from ryu.ofproto import ofproto_v1_3
 import array
 
 import logging
+import copy
 
 PRIVATE_IPS = [
     "192.168.0.0/16",
@@ -35,6 +36,23 @@ PROXY_GW = {
     "mac": "76:7e:26:77:72:4b"
 }
 
+def _apply_controller_actions(datapath, actions={}, priority=0):
+    ofproto = datapath.ofproto
+    parser = datapath.ofproto_parser
+    
+    match = parser.OFPMatch(**actions)
+            
+    actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+
+    # construct flow_mod message and send it.
+    inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                        actions)]
+    # msg
+    mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                            match=match, instructions=inst)
+    # send the instruction to ovs
+    datapath.send_msg(mod)
+
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     
@@ -50,47 +68,44 @@ class Tproxy(app_manager.RyuApp):
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
         
-
         self.add_proxy_flow(datapath)
         self.add_private_flow(datapath)
 
-    def add_proxy_flow(self, datapath, priority=100):
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        
-        kwargs = dict(
+    def _host2proxy(self, datapath, priority=100):
+        matches = dict(
                 eth_type=ether_types.ETH_TYPE_IP,
                 eth_dst=DEFAULT_GW["mac"])
         for ip in proxy_ips:
-            
-            match = parser.OFPMatch(ipv4_src=ip, **kwargs)
-            
-            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-
-            # construct flow_mod message and send it.
-            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                                actions)]
-            # msg
-            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                    match=match, instructions=inst)
-            # send the instruction to ovs
-            datapath.send_msg(mod)
+            m = copy.deepcopy(matches)
+            m.update(ipv4_src=ip)
+            _apply_controller_actions(datapath, m, priority=priority)
             
         for mac in proxy_macs:
-            # should assert mac
-           
-            match = parser.OFPMatch(eth_src=mac, **kwargs)
+            m = copy.deepcopy(matches)
+            m.update(eth_src=mac)
+            _apply_controller_actions(datapath, m, priority=priority)
             
-            actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
-
-            # construct flow_mod message and send it.
-            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                                actions)]
-            # msg
-            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                    match=match, instructions=inst)
-            # send the instruction to ovs
-            datapath.send_msg(mod)
+    
+    def _proxy2host(self, datapath, priority=100):
+        matches = dict(
+                eth_type=ether_types.ETH_TYPE_IP,
+                eth_src=PROXY_GW["mac"])
+        for ip in proxy_ips:
+            m = copy.deepcopy(matches)
+            m.update(ipv4_dst=ip)
+            _apply_controller_actions(datapath, m, priority=priority)
+            
+        for mac in proxy_macs:
+            m = copy.deepcopy(matches)
+            m.update(eth_dst=mac)
+            _apply_controller_actions(datapath, m, priority=priority)
+        
+        
+    
+    def add_proxy_flow(self, datapath, priority=100):
+        self._host2proxy(datapath, priority)
+        self._proxy2host(datapath, priority)
+            
         self.logger.debug("add proxy flow")
         
     def add_normal_flow(self, datapath, priority=0):
@@ -155,21 +170,17 @@ class Tproxy(app_manager.RyuApp):
         
         p = packet.Packet(array.array("B", msg.data))
         
+        self.logger.debug("======+Recv PKGs+======")
         for proto in p.protocols:
-            self.logger.debug("Recv proto: %s", proto)
-            # if proto.protocol_name == "tcp" or proto.protocol_name == "udp":
-            #     pass
+            self.logger.debug("%s: %s", proto.protocol_name, proto)
+            
+        self.logger.debug("=======================")
         
-        # kwargs = dict(
-        #         eth_type=ether_types.ETH_TYPE_IP,
-        #         ipv4_src="")
-        # match = parser.OFPMatch(**kwargs)
-        
+        # parser.OFPActionSetField(),
         actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
         out = parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
             actions=actions, data=p)
         datapath.send_msg(out)
-        self.logger.debug("proxy out=%s", out)
         
         

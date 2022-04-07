@@ -5,6 +5,7 @@ from ryu.controller.handler import set_ev_cls
 from ryu.lib.packet import packet, ether_types, ethernet, arp, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 import array
+from netaddr import IPAddress
 
 import logging
 import copy
@@ -35,6 +36,10 @@ PROXY_GW = {
     "ip": "10.0.0.253/32",
     "mac": "76:7e:26:77:72:4b"
 }
+
+def is_public(ip):
+    ip = IPAddress(ip)
+    return ip.is_unicast() and not ip.is_private()
 
 def _apply_controller_actions(datapath, actions={}, priority=0):
     ofproto = datapath.ofproto
@@ -70,6 +75,7 @@ class Tproxy(app_manager.RyuApp):
         
         self.add_proxy_flow(datapath)
         self.add_private_flow(datapath)
+        self.add_normal_flow(datapath)
 
     def _host2proxy(self, datapath, priority=100):
         matches = dict(
@@ -188,21 +194,44 @@ class Tproxy(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        p = packet.Packet(array.array("B", msg.data))
+        p = packet.Packet(msg.data)
         
         self.logger.debug("======+Recv PKGs+======")
         eth_pkg = p.get_protocol(ethernet.ethernet)
         ipv4_pkg = p.get_protocol(ipv4.ipv4)
         tcp_pkg = p.get_protocol(tcp.tcp)
         udp_pkg = p.get_protocol(udp.udp)
-        
-        if ipv4_pkg and (tcp_pkg or udp_pkg) :
-            pkg = tcp_pkg if tcp_pkg else udp_pkg
-            self.logger.debug("%s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
+        # TODO: assert ipv4_pkg not None
+        pkg = tcp_pkg if tcp_pkg else udp_pkg
+     
+        if ipv4_pkg.src == "10.0.0.1" and is_public(ipv4_pkg.dst):
+            # TODO: host -> proxy
             
-        self.logger.debug("=======================")
+            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst, PROXY_GW["mac"])
+            actions = [
+                parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]), 
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+            out = parser.OFPPacketOut(
+                datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
+                actions=actions, data=p)
+            datapath.send_msg(out)
+            return
         
-        # parser.OFPActionSetField(),
+        if ipv4_pkg.dst == "10.0.0.1" and is_public(ipv4_pkg.src):
+            # TODO: proxy -> host
+            
+            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_pkg.dst, eth_pkg.dst)
+            actions = [
+                parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]), 
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+            out = parser.OFPPacketOut(
+                datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
+                actions=actions, data=p)
+            datapath.send_msg(out)
+            return
+        
+        # NORMAL ACTION
+        self.logger.debug("Local: %s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
         actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
         out = parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],

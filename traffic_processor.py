@@ -55,7 +55,8 @@ class Tproxy(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        
+        # TODO: skip arp pkg
+        # TODO: DNS hack?
         for ip in proxy_ips:
             kwargs = dict(
                     eth_type=ether_types.ETH_TYPE_IP,

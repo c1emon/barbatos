@@ -8,6 +8,16 @@ import array
 
 import logging
 
+PRIVATE_IPS = [
+            "192.168.0.0/16",
+            "0.0.0.0/8",
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "169.254.0.0/16",
+            "224.0.0.0/4",
+            "240.0.0.0/4"
+        ]
+
 proxy_ips = [
     "10.0.0.1/32"
 ]
@@ -31,9 +41,9 @@ class Tproxy(app_manager.RyuApp):
         
 
         # self.add_private_flow(datapath, 100)
-        self.add_arp_flow(datapath)
-        self.add_proxy_flow(datapath, 10)
-        self.add_normal_flow(datapath)
+        # self.add_arp_flow(datapath)
+        # self.add_proxy_flow(datapath, 10)
+        self.add_private_flow(datapath)
     
     def add_arp_flow(self, datapath, priority=1000):
         ofproto = datapath.ofproto
@@ -106,25 +116,34 @@ class Tproxy(app_manager.RyuApp):
         datapath.send_msg(mod)
         self.logger.debug("add normal flow")
         
-    def add_private_flow(self, datapath, priority=1000):
+    def add_private_flow(self, datapath, ips=[],priority=10):
+        """add default flow table, skip local private addresses.
+        By this way, inter lan traffic should just by pass.
+        But the traffic that go to outside should be hacked. 
+        So this rule should has the lowest priority.
+        e.g. DST_IP is WAN, DST_MAC is gatewat's mac.
+
+        Args:
+            datapath (datapath): datapath
+            ips (list, optional): add more private ip cidr. Default to empty list.
+            priority (int, optional): priority of default flow. Defaults to 1000.
+        """
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
-        cidrs = [
-            "192.168.0.0/16",
-            "0.0.0.0/8",
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "169.254.0.0/16",
-            "224.0.0.0/4",
-            "240.0.0.0/4"
-        ]
         
-        for ip in cidrs:
+        # allow arp
+        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP)
+            
+        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
+                                                actions)]
+        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
+                                    match=match, instructions=inst)
+        datapath.send_msg(mod)
         
-            kwargs = dict(
-                eth_type=ether_types.ETH_TYPE_IP,
-                ipv4_dst=ip)
-            match = parser.OFPMatch(**kwargs)
+        # allow private addresses
+        for ip in set(PRIVATE_IPS + ips):
+            match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=ip)
             
             actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
             inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
@@ -132,6 +151,7 @@ class Tproxy(app_manager.RyuApp):
             mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
                                     match=match, instructions=inst)
             datapath.send_msg(mod)
+            
         self.logger.debug("add private flow")
 
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)

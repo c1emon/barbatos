@@ -9,14 +9,14 @@ import array
 import logging
 
 PRIVATE_IPS = [
-            "192.168.0.0/16",
-            "0.0.0.0/8",
-            "10.0.0.0/8",
-            "172.16.0.0/12",
-            "169.254.0.0/16",
-            "224.0.0.0/4",
-            "240.0.0.0/4"
-        ]
+    "192.168.0.0/16",
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "169.254.0.0/16",
+    "224.0.0.0/4",
+    "240.0.0.0/4"
+]
 
 proxy_ips = [
     "10.0.0.1/32"
@@ -24,6 +24,17 @@ proxy_ips = [
 
 proxy_macs = [
 ]
+
+DEFAULT_GW = {
+    "ip": "10.0.0.254/32",
+    "mac": "76:7e:26:77:72:4a"
+}
+
+PROXY_GW = {
+    "ip": "10.0.0.253/32",
+    "mac": "76:7e:26:77:72:4b"
+}
+
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
     
@@ -40,38 +51,19 @@ class Tproxy(app_manager.RyuApp):
         datapath = ev.msg.datapath
         
 
-        # self.add_private_flow(datapath, 100)
-        # self.add_arp_flow(datapath)
-        # self.add_proxy_flow(datapath, 10)
+        self.add_proxy_flow(datapath)
         self.add_private_flow(datapath)
-    
-    def add_arp_flow(self, datapath, priority=1000):
+
+    def add_proxy_flow(self, datapath, priority=100):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP)
-        
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
-
-        # construct flow_mod message and send it.
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                             actions)]
-        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                match=match, instructions=inst)
-        datapath.send_msg(mod)
-        self.logger.debug("mod arp: %s", mod)
-
-    def add_proxy_flow(self, datapath, priority=0):
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        
-        # TODO: skip arp pkg
-        # TODO: DNS hack?
+        kwargs = dict(
+                eth_type=ether_types.ETH_TYPE_IP,
+                eth_dst=DEFAULT_GW["mac"])
         for ip in proxy_ips:
-            kwargs = dict(
-                    eth_type=ether_types.ETH_TYPE_IP,
-                    ipv4_src=ip)
-            match = parser.OFPMatch(**kwargs)
+            
+            match = parser.OFPMatch(ipv4_src=ip, **kwargs)
             
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
 
@@ -86,8 +78,8 @@ class Tproxy(app_manager.RyuApp):
             
         for mac in proxy_macs:
             # should assert mac
-            kwargs = dict(eth_src=mac)
-            match = parser.OFPMatch(**kwargs)
+           
+            match = parser.OFPMatch(eth_src=mac, **kwargs)
             
             actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
 

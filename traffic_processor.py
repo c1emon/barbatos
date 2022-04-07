@@ -2,7 +2,7 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.lib.packet import packet, ether_types
+from ryu.lib.packet import packet, ether_types, ethernet, arp, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 import array
 
@@ -171,8 +171,14 @@ class Tproxy(app_manager.RyuApp):
         p = packet.Packet(array.array("B", msg.data))
         
         self.logger.debug("======+Recv PKGs+======")
-        for proto in p.protocols:
-            self.logger.debug("%s: %s", proto.protocol_name, proto)
+        eth_pkg = p.get_protocol(ethernet.ethernet)
+        ipv4_pkg = p.get_protocol(ipv4.ipv4)
+        tcp_pkg = p.get_protocol(tcp.tcp)
+        udp_pkg = p.get_protocol(udp.udp)
+        
+        if ipv4_pkg and (tcp_pkg or udp_pkg) :
+            pkg = tcp_pkg if tcp_pkg else udp_pkg
+            self.logger.debug("%s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
             
         self.logger.debug("=======================")
         

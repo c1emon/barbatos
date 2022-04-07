@@ -78,11 +78,21 @@ class Tproxy(app_manager.RyuApp):
         for ip in proxy_ips:
             m = copy.deepcopy(matches)
             m.update(ipv4_src=ip)
+            # TCP
+            m.update(ip_proto=6)
+            _apply_controller_actions(datapath, m, priority=priority)
+            # UDP
+            m.update(ip_proto=17)
             _apply_controller_actions(datapath, m, priority=priority)
             
         for mac in proxy_macs:
             m = copy.deepcopy(matches)
             m.update(eth_src=mac)
+            # TCP
+            m.update(ip_proto=6)
+            _apply_controller_actions(datapath, m, priority=priority)
+            # UDP
+            m.update(ip_proto=17)
             _apply_controller_actions(datapath, m, priority=priority)
             
     
@@ -93,11 +103,21 @@ class Tproxy(app_manager.RyuApp):
         for ip in proxy_ips:
             m = copy.deepcopy(matches)
             m.update(ipv4_dst=ip)
+            # TCP
+            m.update(ip_proto=6)
+            _apply_controller_actions(datapath, m, priority=priority)
+            # UDP
+            m.update(ip_proto=17)
             _apply_controller_actions(datapath, m, priority=priority)
             
         for mac in proxy_macs:
             m = copy.deepcopy(matches)
             m.update(eth_dst=mac)
+            # TCP
+            m.update(ip_proto=6)
+            _apply_controller_actions(datapath, m, priority=priority)
+            # UDP
+            m.update(ip_proto=17)
             _apply_controller_actions(datapath, m, priority=priority)
         
         

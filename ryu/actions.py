@@ -70,7 +70,7 @@ def add_dns_proxy_flow(datapath, hosts, priority=100):
     
     for host in hosts:
         
-        if host.has_key("mac"):
+        if "mac" in host:
             # req
             req_match.update(eth_src=str(host["mac"]))
             mod = build_flow(datapath, priority, actions, req_match)

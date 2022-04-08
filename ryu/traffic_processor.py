@@ -1,3 +1,4 @@
+from re import A
 from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
@@ -54,9 +55,10 @@ class Tproxy(app_manager.RyuApp):
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
         
-        # self.hack_dns(datapath)
+        add_dns_proxy_flow(datapath, [{"ip":"10.0.0.1"}])
         self.add_proxy_flow(datapath)
-        self.add_normal_flow(datapath)
+        add_private_flow(datapath)
+        add_normal_flow(datapath)
 
    
         
@@ -109,7 +111,7 @@ class Tproxy(app_manager.RyuApp):
             m.update(ip_proto=17)
             add_proxy_flow(datapath, m, priority=priority)
         
-    def add_proxy_flow(self, datapath, priority=100):
+    def add_proxy_flow(self, datapath, priority=20):
         self._host2proxy(datapath, priority)
         self._proxy2host(datapath, priority)
             

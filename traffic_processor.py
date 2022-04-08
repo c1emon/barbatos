@@ -8,6 +8,7 @@ from netaddr import IPAddress, IPSet
 
 import logging
 import copy
+from numba import jit
 
 PRIVATE_IPS = [
     "192.168.0.0/16",
@@ -46,7 +47,7 @@ def _apply_controller_actions(datapath, actions={}, priority=0):
     
     match = parser.OFPMatch(**actions)
             
-    actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER)]
+    actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
 
     # construct flow_mod message and send it.
     inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
@@ -162,7 +163,7 @@ class Tproxy(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         
         match = parser.OFPMatch()
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
 
         # construct flow_mod message and send it.
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
@@ -190,7 +191,7 @@ class Tproxy(app_manager.RyuApp):
         # allow arp
         match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP)
             
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
         inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
                                                 actions)]
         mod = parser.OFPFlowMod(datapath=datapath, priority=priority,

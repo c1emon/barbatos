@@ -5,6 +5,7 @@ from ryu.controller.handler import set_ev_cls
 from ryu.lib.packet import packet, ether_types, ethernet, arp, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 from netaddr import IPAddress, IPSet
+from utils import *
 
 import logging
 import copy
@@ -36,10 +37,6 @@ PROXY_GW = {
     "ip": IPAddress("10.0.0.253"),
     "mac": "76:7e:26:77:72:4b"
 }
-
-def is_public(ip):
-    ip = IPAddress(ip)
-    return ip.is_unicast() and not ip.is_private()
 
 def _apply_controller_actions(datapath, actions={}, priority=0):
     ofproto = datapath.ofproto
@@ -81,7 +78,7 @@ class Tproxy(app_manager.RyuApp):
         
         self._hack_dns(datapath)
         self.add_proxy_flow(datapath)
-        self.add_private_flow(datapath)
+        # self.add_private_flow(datapath)
         self.add_normal_flow(datapath)
 
     def _hack_dns(self, datapath, priority=101):
@@ -220,21 +217,31 @@ class Tproxy(app_manager.RyuApp):
         
         p = packet.Packet(msg.data)
         
+        # for header in p:
+        #     name = header.protocol_name
+        #     if name == "ipv4":
+        #         pass
+        #     if name == "tcp":
+        #         pass
+        #     if name == "udp":
+        #         pass
+        
         eth_pkg = p.get_protocol(ethernet.ethernet)
         ipv4_pkg = p.get_protocol(ipv4.ipv4)
         tcp_pkg = p.get_protocol(tcp.tcp)
         udp_pkg = p.get_protocol(udp.udp)
         # TODO: assert ipv4_pkg not None
         pkg = tcp_pkg if tcp_pkg else udp_pkg
+        # body = eth_pkg.protocols[-1]
 
         if udp_pkg and pkg.dst_port == 53 and ipv4_pkg.src in self.proxy_ips:
             # dns req
             # hack to proxy:53
-            self.logger.debug("dns: h -> p")
+            self.logger.debug("dns request(%s -> %s): %s", ipv4_pkg.src, ipv4_pkg.dst, udp_pkg.data)
             actions = [
                 parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
                 parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
             out = parser.OFPPacketOut(
                 datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                 actions=actions, data=p)
@@ -242,11 +249,11 @@ class Tproxy(app_manager.RyuApp):
             return
         
         if udp_pkg and pkg.src_port == 53 and ipv4_pkg.src == str(PROXY_GW["ip"]) and ipv4_pkg.dst in self.proxy_ips:
-            self.logger.debug("dns: p -> h")
+            self.logger.debug("dns(p -> h): %s", udp_pkg)
             actions = [
                 parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
                 parser.OFPActionSetField(ipv4_src="114.114.114.114"),
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
             out = parser.OFPPacketOut(
                 datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                 actions=actions, data=p)
@@ -259,7 +266,7 @@ class Tproxy(app_manager.RyuApp):
             self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst, PROXY_GW["mac"])
             actions = [
                 parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]), 
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
             out = parser.OFPPacketOut(
                 datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                 actions=actions, data=p)
@@ -272,7 +279,7 @@ class Tproxy(app_manager.RyuApp):
             self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_pkg.dst, eth_pkg.dst)
             actions = [
                 parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]), 
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
             out = parser.OFPPacketOut(
                 datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                 actions=actions, data=p)
@@ -281,9 +288,9 @@ class Tproxy(app_manager.RyuApp):
         
         # NORMAL ACTION
         self.logger.debug("Local: %s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
+        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
         out = parser.OFPPacketOut(
-            datapath=datapath, buffer_id=ofproto.OFPCML_NO_BUFFER, in_port=msg.match["in_port"],
+            datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
             actions=actions, data=p)
         datapath.send_msg(out)
         

@@ -11,6 +11,34 @@ def add_proxy_flow(datapath, match={}, priority=20):
     mod = build_flow(datapath, priority, actions, match)
     datapath.send_msg(mod)
     
+def add_host_proxy_flow(datapath, hosts, default_gw, proxy_gw, priority=20):
+
+    out_match = dict(
+            eth_type=ether_types.ETH_TYPE_IP,
+            eth_dst=default_gw["mac"])
+    
+    in_match = dict(
+            eth_type=ether_types.ETH_TYPE_IP,
+            eth_src=proxy_gw["mac"])
+    
+    for host in hosts:
+        if "mac" in host:
+            out_match.update(eth_src=str(host["mac"]))
+            add_proxy_flow(datapath, out_match, priority)
+            del out_match["eth_src"]
+            
+            in_match.update(eth_dst=str(host["mac"]))
+            add_proxy_flow(datapath, in_match, priority)
+            del in_match["eth_dst"]
+        else:
+            out_match.update(ipv4_src=str(host["ip"]))
+            add_proxy_flow(datapath, out_match, priority)
+            del out_match["ipv4_src"]
+            
+            in_match.update(ipv4_dst=str(host["ip"]))
+            add_proxy_flow(datapath, in_match, priority)
+            del in_match["ipv4_dst"]
+            
 def add_normal_flow(datapath, match={}, priority=0):
     ofproto = datapath.ofproto
     parser = datapath.ofproto_parser
@@ -50,8 +78,6 @@ def add_dns_proxy_flow(datapath, hosts, priority=100):
                            ]
         priority (int, optional): priority. Defaults to 100.
     """
-    ofproto = datapath.ofproto
-    parser = datapath.ofproto_parser
     
     # ipv4_src = private ips or eth_src = private macs
     req_match = dict(
@@ -65,32 +91,24 @@ def add_dns_proxy_flow(datapath, hosts, priority=100):
             ip_proto=17,
             udp_src=53)
     
-    actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, 
-                                        ofproto.OFPCML_NO_BUFFER)]
-    
     for host in hosts:
-        
         if "mac" in host:
             # req
             req_match.update(eth_src=str(host["mac"]))
-            mod = build_flow(datapath, priority, actions, req_match)
-            datapath.send_msg(mod)
+            add_proxy_flow(datapath, req_match, priority)
             del req_match["eth_src"]
             # resp
             resp_match.update(eth_dst=str(host["mac"]))
-            mod = build_flow(datapath, priority, actions, resp_match)
-            datapath.send_msg(mod)
+            add_proxy_flow(datapath, resp_match, priority)
             del resp_match["eth_dst"]
         else:
             # req
             req_match.update(ipv4_src=str(host["ip"]))
-            mod = build_flow(datapath, priority, actions, req_match)
-            datapath.send_msg(mod)
+            add_proxy_flow(datapath, req_match, priority)
             del req_match["ipv4_src"]
             # resp
             resp_match.update(ipv4_dst=str(host["ip"]))
-            mod = build_flow(datapath, priority, actions, resp_match)
-            datapath.send_msg(mod)
+            add_proxy_flow(datapath, resp_match, priority)
             del resp_match["ipv4_dst"]
 
 def build_flow(datapath, priority, actions=[], match={}, **kwargs):

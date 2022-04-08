@@ -283,7 +283,7 @@ class Tproxy(app_manager.RyuApp):
         self.logger.debug("Local: %s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
         actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
         out = parser.OFPPacketOut(
-            datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
+            datapath=datapath, buffer_id=ofproto.OFPCML_NO_BUFFER, in_port=msg.match["in_port"],
             actions=actions, data=p)
         datapath.send_msg(out)
         

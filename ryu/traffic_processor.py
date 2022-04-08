@@ -5,21 +5,15 @@ from ryu.controller.handler import set_ev_cls
 from ryu.lib.packet import packet, ether_types, ethernet, arp, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 from netaddr import IPAddress, IPSet
+
+from actions import *
 from utils import *
+from handler import *
 
 import logging
 import copy
 from numba import jit
 
-PRIVATE_IPS = [
-    "192.168.0.0/16",
-    "0.0.0.0/8",
-    "10.0.0.0/8",
-    "172.16.0.0/12",
-    "169.254.0.0/16",
-    "224.0.0.0/4",
-    "240.0.0.0/4"
-]
 
 proxy_ips = [
     "10.0.0.1"
@@ -38,22 +32,6 @@ PROXY_GW = {
     "mac": "76:7e:26:77:72:4b"
 }
 
-def _apply_controller_actions(datapath, actions={}, priority=0):
-    ofproto = datapath.ofproto
-    parser = datapath.ofproto_parser
-    
-    match = parser.OFPMatch(**actions)
-            
-    actions = [parser.OFPActionOutput(ofproto.OFPP_CONTROLLER, ofproto.OFPCML_NO_BUFFER)]
-
-    # construct flow_mod message and send it.
-    inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                        actions)]
-    # msg
-    mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                            match=match, instructions=inst)
-    # send the instruction to ovs
-    datapath.send_msg(mod)
 
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -76,27 +54,11 @@ class Tproxy(app_manager.RyuApp):
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
         
-        self._hack_dns(datapath)
+        # self.hack_dns(datapath)
         self.add_proxy_flow(datapath)
-        # self.add_private_flow(datapath)
         self.add_normal_flow(datapath)
 
-    def _hack_dns(self, datapath, priority=101):
-        # match DNS request
-        matches = dict(
-                eth_type=ether_types.ETH_TYPE_IP,
-                ip_proto=17,
-                udp_dst=53)
-        
-        for ip in proxy_ips:
-            m = copy.deepcopy(matches)
-            m.update(ipv4_src=ip)
-            _apply_controller_actions(datapath, m, priority=priority)
-            
-        for mac in proxy_macs:
-            m = copy.deepcopy(matches)
-            m.update(eth_src=mac)
-            _apply_controller_actions(datapath, m, priority=priority)
+   
         
     def _host2proxy(self, datapath, priority=100):
         matches = dict(
@@ -107,20 +69,20 @@ class Tproxy(app_manager.RyuApp):
             m.update(ipv4_src=str(ip))
             # TCP
             m.update(ip_proto=6)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             # UDP
             m.update(ip_proto=17)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             
         for mac in proxy_macs:
             m = copy.deepcopy(matches)
             m.update(eth_src=mac)
             # TCP
             m.update(ip_proto=6)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             # UDP
             m.update(ip_proto=17)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             
     
     def _proxy2host(self, datapath, priority=100):
@@ -132,82 +94,27 @@ class Tproxy(app_manager.RyuApp):
             m.update(ipv4_dst=str(ip))
             # TCP
             m.update(ip_proto=6)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             # UDP
             m.update(ip_proto=17)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             
         for mac in proxy_macs:
             m = copy.deepcopy(matches)
             m.update(eth_dst=mac)
             # TCP
             m.update(ip_proto=6)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
             # UDP
             m.update(ip_proto=17)
-            _apply_controller_actions(datapath, m, priority=priority)
+            add_proxy_flow(datapath, m, priority=priority)
         
-        
-    
     def add_proxy_flow(self, datapath, priority=100):
         self._host2proxy(datapath, priority)
         self._proxy2host(datapath, priority)
             
-        self.logger.debug("add proxy flow")
-        
-    def add_normal_flow(self, datapath, priority=0):
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        
-        match = parser.OFPMatch()
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
-
-        # construct flow_mod message and send it.
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                             actions)]
-        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                match=match, instructions=inst)
-        datapath.send_msg(mod)
-        self.logger.debug("add normal flow")
-        
-    def add_private_flow(self, datapath, ips=[],priority=10):
-        """add default flow table, skip local private addresses.
-        By this way, inter lan traffic should just by pass.
-        But the traffic that go to outside should be hacked. 
-        So this rule should has the lowest priority.
-        e.g. DST_IP is WAN, DST_MAC is gatewat's mac.
-
-        Args:
-            datapath (datapath): datapath
-            ips (list, optional): add more private ip cidr. Default to empty list.
-            priority (int, optional): priority of default flow. Defaults to 1000.
-        """
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
-        
-        # allow arp
-        match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_ARP)
-            
-        actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
-        inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                                actions)]
-        mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                    match=match, instructions=inst)
-        datapath.send_msg(mod)
-        
-        # allow private addresses
-        for ip in set(PRIVATE_IPS + ips):
-            match = parser.OFPMatch(eth_type=ether_types.ETH_TYPE_IP, ipv4_dst=ip)
-            
-            actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL)]
-            inst = [parser.OFPInstructionActions(ofproto.OFPIT_APPLY_ACTIONS,
-                                                actions)]
-            mod = parser.OFPFlowMod(datapath=datapath, priority=priority,
-                                    match=match, instructions=inst)
-            datapath.send_msg(mod)
-            
-        self.logger.debug("add private flow")
-
+        self.logger.info("add proxy flow")
+   
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         msg = ev.msg
@@ -216,15 +123,6 @@ class Tproxy(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         
         p = packet.Packet(msg.data)
-        
-        # for header in p:
-        #     name = header.protocol_name
-        #     if name == "ipv4":
-        #         pass
-        #     if name == "tcp":
-        #         pass
-        #     if name == "udp":
-        #         pass
         
         eth_pkg = p.get_protocol(ethernet.ethernet)
         ipv4_pkg = p.get_protocol(ipv4.ipv4)
@@ -237,7 +135,7 @@ class Tproxy(app_manager.RyuApp):
         if udp_pkg and pkg.dst_port == 53 and ipv4_pkg.src in self.proxy_ips:
             # dns req
             # hack to proxy:53
-            self.logger.debug("dns request(%s -> %s): %s", ipv4_pkg.src, ipv4_pkg.dst, udp_pkg.data)
+            self.logger.info("dns request(%s -> %s): %s", ipv4_pkg.src, ipv4_pkg.dst, udp_pkg.data)
             actions = [
                 parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
                 parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
@@ -249,7 +147,7 @@ class Tproxy(app_manager.RyuApp):
             return
         
         if udp_pkg and pkg.src_port == 53 and ipv4_pkg.src == str(PROXY_GW["ip"]) and ipv4_pkg.dst in self.proxy_ips:
-            self.logger.debug("dns(p -> h): %s", udp_pkg)
+            self.logger.info("dns(p -> h): %s", udp_pkg)
             actions = [
                 parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
                 parser.OFPActionSetField(ipv4_src="114.114.114.114"),
@@ -263,7 +161,7 @@ class Tproxy(app_manager.RyuApp):
         if ipv4_pkg.src in self.proxy_ips and is_public(ipv4_pkg.dst):
             # TODO: host -> proxy
             
-            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst, PROXY_GW["mac"])
+            self.logger.info("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst, PROXY_GW["mac"])
             actions = [
                 parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]), 
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
@@ -276,7 +174,7 @@ class Tproxy(app_manager.RyuApp):
         if ipv4_pkg.dst in self.proxy_ips and is_public(ipv4_pkg.src):
             # TODO: proxy -> host
             
-            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_pkg.dst, eth_pkg.dst)
+            self.logger.info("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_pkg.dst, eth_pkg.dst)
             actions = [
                 parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]), 
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
@@ -287,7 +185,7 @@ class Tproxy(app_manager.RyuApp):
             return
         
         # NORMAL ACTION
-        self.logger.debug("Local: %s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
+        self.logger.info("Local: %s: %s(%s) ---> %s(%s)", pkg.protocol_name, ipv4_pkg.src, eth_pkg.src, ipv4_pkg.dst, eth_pkg.dst)
         actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
         out = parser.OFPPacketOut(
             datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],

@@ -33,29 +33,48 @@ class dns(packet_base.PacketBase):
     _DNS_PACK_HEADER = "!HBBHHHH"
     _HEADER_LEN = struct.calcsize(_DNS_PACK_HEADER)
     
-    def __init__(self):
+    def __init__(self, id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs):
         super(dns, self).__init__()
-        self.id = None
+        self.id = id
+        self.qr = qr
+        self.opcode = opcode
+        self.aa = aa
+        self.tc = tc
+        self.rd = rd
+        self.ra = ra
+        self.z = z
+        self.ad = ad
+        self.cd =cd
+        self.rcode = rcode
+        self.questions = questions
+        self.answer_rrs = answer_rrs 
+        self.authority_rrs = authority_rrs
+        self.additional_rrs = additional_rrs
         
     @classmethod
     def parser(cls, buf):
-        header, rest_buf = dns._header_parser(buf)
-        print("id: 0x%x\nquestions: %d\nanswer_rrs: %d\nauthority_rrs: %d\nadditional_rrs: %d\n" % (header[0], questions, answer_rrs, authority_rrs, additional_rrs))
+        header, rest_buf = _dns_header_parser(buf)
+        # print("id: 0x%x\nquestions: %d\nanswer_rrs: %d\nauthority_rrs: %d\nadditional_rrs: %d\n" % (header[0], questions, answer_rrs, authority_rrs, additional_rrs))
         
-        
-    @classmethod
-    def _header_parser(cls, buf):
-        (id, flags1, flags2, questions, 
-         answer_rrs, authority_rrs, additional_rrs) = struct.unpack_from(dns._DNS_PACK_HEADER, buf)
-
-        qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
-        ra, z, ad, cd, rcode = flags2 & 0x80, flags2 & 0x40, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
-        
-        return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
-                buf[dns._HEADER_LEN:])
+        return (
+            cls(*header),
+            None,
+            buf[cls._HEADER_LEN:]
+        )
     
     def _body_parser(self, buf):
         struct.unpack_from(dns._DNS_PACK_HEADER, buf)
     
     def serialize(self, _payload=None, _prev=None):
         pass
+
+
+def _dns_header_parser(buf):
+    (id, flags1, flags2, questions, 
+        answer_rrs, authority_rrs, additional_rrs) = struct.unpack_from(dns._DNS_PACK_HEADER, buf)
+
+    qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
+    ra, z, ad, cd, rcode = flags2 & 0x80, flags2 & 0x40, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
+    
+    return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
+            buf[dns._HEADER_LEN:])

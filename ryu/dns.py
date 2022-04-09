@@ -24,9 +24,25 @@ DNS packet parser/serializer
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 # 
 # flags format(16 bits):
-# flags = QR(1bit)|Opcode(4bit)|AA(1bit)|TC(1bit)|RD(1bit)|RA(1bit)|Z(1bit)|AD(1bit)|CD(1bit)|Rcode(4bit)
+# QR(1bit)|Opcode(4bit)|AA(1bit)|TC(1bit)|RD(1bit)|RA(1bit)|Z(1bit)|AD(1bit)|CD(1bit)|Rcode(4bit)
+# 
+# single question format:
+#  0                   1                   2                   3
+#  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |                     Query Name (variable)                     |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |             type              |            class              |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#   Query Name format:
+#       number of bytes | bytes0(8bits) bytes1 ... bytesn | number of bytes | bytes0 bytes1 ... bytesn | ... | 00(8bits) | QTYPE(16bits) | QCLASS(16bits)
+# 
+# 
+# 
 # 
 
+
+from xml import dom
 from ryu.lib.packet import packet_base
 import struct
 class dns(packet_base.PacketBase):
@@ -54,7 +70,7 @@ class dns(packet_base.PacketBase):
     @classmethod
     def parser(cls, buf):
         header, rest_buf = _dns_header_parser(buf)
-        # print("id: 0x%x\nquestions: %d\nanswer_rrs: %d\nauthority_rrs: %d\nadditional_rrs: %d\n" % (header[0], questions, answer_rrs, authority_rrs, additional_rrs))
+        questions, rest_buf = _dns_questions_parser(header[11], rest_buf)
         
         return (
             cls(*header),
@@ -78,3 +94,32 @@ def _dns_header_parser(buf):
     
     return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
             buf[dns._HEADER_LEN:])
+    
+def _dns_questions_parser(n_questions, buf):
+    pos = 0
+    offsets = [0]
+    questions = {}
+    for i in range(n_questions):
+        domain , p = _parse_label(buf[pos:])
+        pos += p
+        (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
+        pos += 4
+        questions[domain] = {
+            "offset": dns._HEADER_LEN + offsets[i],
+            "type": qtype,
+            "class": qclass
+        }
+        offsets.append(pos)
+    return questions, buf[pos:]
+
+def _parse_label(buf):
+    pos = 0
+    domain = []
+    while buf[pos] != 0x00:
+        len = buf[pos]
+        s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
+        domain.append(str(s, encoding='utf-8'))
+        pos += (len+1)
+    
+    # (qtype, qclass) = struct.unpack_from("!HH", buf[offset:])
+    return ".".join(domain), pos+1

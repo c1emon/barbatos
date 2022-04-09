@@ -71,6 +71,9 @@ class dns(packet_base.PacketBase):
     def parser(cls, buf):
         header, rest_buf = cls._dns_header_parser(buf)
         questions, rest_buf = cls._dns_questions_parser(header[11], rest_buf)
+        if header[1]:
+            # resp
+            pass
         
         return (
             cls(*header),
@@ -101,7 +104,7 @@ class dns(packet_base.PacketBase):
         offsets = [0]
         questions = {}
         for i in range(n_questions):
-            domain , p = cls._parse_label(buf[pos:])
+            domain , p = _parse_domain_label(buf[pos:])
             pos += p
             (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
             pos += 4
@@ -113,15 +116,43 @@ class dns(packet_base.PacketBase):
             offsets.append(pos)
         return questions, buf[pos:]
 
-    @classmethod
-    def _parse_label(cls, buf):
-        pos = 0
-        domain = []
-        while buf[pos] != 0x00:
-            len = buf[pos]
-            s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
-            domain.append(str(s, encoding='utf-8'))
-            pos += (len+1)
+    
+def _parse_domain_label(buf):
+    """Domain name in the label format shown below:
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    length[0](8bit) | char[0] | char[1] | .... | char[length[0]-1] |
+    length[1](8bit) | char[0] | char[1] | .... | char[length[1]-1] |
+    ........
+    length[n](8bit) | char[0] | char[1] | .... | char[length[n]-1] |
+    0(8bit)
+    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    Every single part should be divide by "." to build raw domain string.
+    And the last "0" indicate the domian string has finished.
+    Every length[x] should be '00xx xxxx' in binary format. The first two bits should be zeros.
+    
+    The input buf must come first with vaild domain label. And this function just parses first domain label.
+    Args:
+        buf (bytearray): input byte array
+
+    Returns:
+        domain (string): domain name
+        length (int): length of this domain in buf
+    """
+    pos = 0
+    domain = []
+    while buf[pos] != 0x00:
+        len = buf[pos]
+        s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
+        domain.append(str(s, encoding='utf-8'))
+        pos += (len+1)
+    
+    return ".".join(domain), pos+1
+    
+
+def parse_answer(answer_n, buf):
+    pos = 0
+    answers = []
+    for i in range(answer_n):
         
-        # (qtype, qclass) = struct.unpack_from("!HH", buf[offset:])
-        return ".".join(domain), pos+1
+        if buf[0] & 0xc0:
+            offset = buf[0]

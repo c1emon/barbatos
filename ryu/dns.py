@@ -69,8 +69,8 @@ class dns(packet_base.PacketBase):
         
     @classmethod
     def parser(cls, buf):
-        header, rest_buf = _dns_header_parser(buf)
-        questions, rest_buf = _dns_questions_parser(header[11], rest_buf)
+        header, rest_buf = cls._dns_header_parser(buf)
+        questions, rest_buf = cls._dns_questions_parser(header[11], rest_buf)
         
         return (
             cls(*header),
@@ -84,42 +84,44 @@ class dns(packet_base.PacketBase):
     def serialize(self, _payload=None, _prev=None):
         pass
 
+    @classmethod
+    def _dns_header_parser(cls, buf):
+        (id, flags1, flags2, questions, 
+            answer_rrs, authority_rrs, additional_rrs) = struct.unpack_from(cls._DNS_PACK_HEADER, buf)
 
-def _dns_header_parser(buf):
-    (id, flags1, flags2, questions, 
-        answer_rrs, authority_rrs, additional_rrs) = struct.unpack_from(dns._DNS_PACK_HEADER, buf)
+        qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
+        ra, z, ad, cd, rcode = flags2 & 0x80, flags2 & 0x40, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
+        
+        return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
+                buf[cls._HEADER_LEN:])
+    
+    @classmethod
+    def _dns_questions_parser(cls, n_questions, buf):
+        pos = 0
+        offsets = [0]
+        questions = {}
+        for i in range(n_questions):
+            domain , p = cls._parse_label(buf[pos:])
+            pos += p
+            (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
+            pos += 4
+            questions[domain] = {
+                "offset": cls._HEADER_LEN + offsets[i],
+                "type": qtype,
+                "class": qclass
+            }
+            offsets.append(pos)
+        return questions, buf[pos:]
 
-    qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
-    ra, z, ad, cd, rcode = flags2 & 0x80, flags2 & 0x40, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
-    
-    return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
-            buf[dns._HEADER_LEN:])
-    
-def _dns_questions_parser(n_questions, buf):
-    pos = 0
-    offsets = [0]
-    questions = {}
-    for i in range(n_questions):
-        domain , p = _parse_label(buf[pos:])
-        pos += p
-        (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
-        pos += 4
-        questions[domain] = {
-            "offset": dns._HEADER_LEN + offsets[i],
-            "type": qtype,
-            "class": qclass
-        }
-        offsets.append(pos)
-    return questions, buf[pos:]
-
-def _parse_label(buf):
-    pos = 0
-    domain = []
-    while buf[pos] != 0x00:
-        len = buf[pos]
-        s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
-        domain.append(str(s, encoding='utf-8'))
-        pos += (len+1)
-    
-    # (qtype, qclass) = struct.unpack_from("!HH", buf[offset:])
-    return ".".join(domain), pos+1
+    @classmethod
+    def _parse_label(cls, buf):
+        pos = 0
+        domain = []
+        while buf[pos] != 0x00:
+            len = buf[pos]
+            s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
+            domain.append(str(s, encoding='utf-8'))
+            pos += (len+1)
+        
+        # (qtype, qclass) = struct.unpack_from("!HH", buf[offset:])
+        return ".".join(domain), pos+1

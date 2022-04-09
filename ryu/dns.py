@@ -34,15 +34,14 @@ DNS packet parser/serializer
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 #  |             type              |            class              |
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-#   Query Name format:
-#       number of bytes | bytes0(8bits) bytes1 ... bytesn | number of bytes | bytes0 bytes1 ... bytesn | ... | 00(8bits) | QTYPE(16bits) | QCLASS(16bits)
+#  Query Name format shown in function ```_parse_domain_label```
+# 
 # 
 # 
 # 
 # 
 
 
-from xml import dom
 from ryu.lib.packet import packet_base
 import struct
 class dns(packet_base.PacketBase):
@@ -71,6 +70,7 @@ class dns(packet_base.PacketBase):
     def parser(cls, buf):
         header, rest_buf = cls._dns_header_parser(buf)
         questions, rest_buf = cls._dns_questions_parser(header[11], rest_buf)
+        
         if header[1]:
             # resp
             pass
@@ -142,6 +142,7 @@ def _parse_domain_label(buf):
     domain = []
     while buf[pos] != 0x00:
         len = buf[pos]
+        # TODO: assert len & 0xc0
         s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
         domain.append(str(s, encoding='utf-8'))
         pos += (len+1)

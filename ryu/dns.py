@@ -44,11 +44,12 @@ DNS packet parser/serializer
 
 from ryu.lib.packet import packet_base
 import struct
+
 class dns(packet_base.PacketBase):
     _DNS_PACK_HEADER = "!HBBHHHH"
     _HEADER_LEN = struct.calcsize(_DNS_PACK_HEADER)
     
-    def __init__(self, id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs):
+    def __init__(self, id, qr, opcode, aa, tc, rd, ra, ad, cd, rcode, qdcount, ancount, nscount, arcount):
         super(dns, self).__init__()
         self.id = id
         self.qr = qr
@@ -57,65 +58,105 @@ class dns(packet_base.PacketBase):
         self.tc = tc
         self.rd = rd
         self.ra = ra
-        self.z = z
+        # self.z = z
         self.ad = ad
         self.cd =cd
         self.rcode = rcode
-        self.questions = questions
-        self.answer_rrs = answer_rrs 
-        self.authority_rrs = authority_rrs
-        self.additional_rrs = additional_rrs
+        self.qdcount = qdcount
+        self.ancount = ancount 
+        self.nscount = nscount
+        self.arcount = arcount
         
     @classmethod
     def parser(cls, buf):
-        header, rest_buf = cls._dns_header_parser(buf)
-        questions, rest_buf = cls._dns_questions_parser(header[11], rest_buf)
         
-        if header[1]:
+        (id, flags1, flags2, 
+         qdcount, ancount, 
+         nscount, arcount) = struct.unpack_from(cls._DNS_PACK_HEADER, buf)
+        rest_buf = buf[cls._HEADER_LEN:]
+        
+        qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
+        ra, ad, cd, rcode = flags2 & 0x80, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
+        
+        q, rest_buf = dns_question.parser(rest_buf, qdcount)
+        
+        if qr:
             # resp
             pass
         
         return (
-            cls(*header),
+            cls(id, qr, opcode, aa, tc, rd, ra, ad, cd, rcode, qdcount, ancount, nscount, arcount),
             None,
-            buf[cls._HEADER_LEN:]
+            rest_buf
         )
-    
-    def _body_parser(self, buf):
-        struct.unpack_from(dns._DNS_PACK_HEADER, buf)
     
     def serialize(self, _payload=None, _prev=None):
         pass
 
-    @classmethod
-    def _dns_header_parser(cls, buf):
-        (id, flags1, flags2, questions, 
-            answer_rrs, authority_rrs, additional_rrs) = struct.unpack_from(cls._DNS_PACK_HEADER, buf)
+   
 
-        qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
-        ra, z, ad, cd, rcode = flags2 & 0x80, flags2 & 0x40, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
-        
-        return ((id, qr, opcode, aa, tc, rd, ra, z, ad, cd, rcode, questions, answer_rrs, authority_rrs, additional_rrs),
-                buf[cls._HEADER_LEN:])
+class dns_question(object):
+    
+    OFFSET = dns._HEADER_LEN
+    
+    def __init__(self, questions):
+        self.questions = questions
     
     @classmethod
-    def _dns_questions_parser(cls, n_questions, buf):
+    def parser(cls, buf, qdcount):
         pos = 0
         offsets = [0]
         questions = {}
-        for i in range(n_questions):
+        for i in range(qdcount):
             domain , p = _parse_domain_label(buf[pos:])
             pos += p
             (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
             pos += 4
             questions[domain] = {
-                "offset": cls._HEADER_LEN + offsets[i],
+                "offset": cls.OFFSET + offsets[i],
                 "type": qtype,
                 "class": qclass
             }
             offsets.append(pos)
-        return questions, buf[pos:]
+            
+        return cls(questions), buf[pos:]
+    
+    def serialize(self, _payload=None, _prev=None):
+        pass
+    
+    
+class dns_answer(object):
+    def __init__(self) -> None:
+        pass
+    
+    @classmethod
+    def parser(cls, buf, ancount):
+        pass
+    
+    def serialize(self, _payload=None, _prev=None):
+        pass
+    
+class dns_authority(object):
+    def __init__(self) -> None:
+        pass
+    
+    @classmethod
+    def parser(cls, buf, nscount):
+        pass
+    
+    def serialize(self, _payload=None, _prev=None):
+        pass
 
+class dns_additional(object):
+    def __init__(self) -> None:
+        pass
+    
+    @classmethod
+    def parser(cls, buf, arcount):
+        pass
+    
+    def serialize(self, _payload=None, _prev=None):
+        pass
     
 def _parse_domain_label(buf):
     """Domain name in the label format shown below:
@@ -149,11 +190,3 @@ def _parse_domain_label(buf):
     
     return ".".join(domain), pos+1
     
-
-def parse_answer(answer_n, buf):
-    pos = 0
-    answers = []
-    for i in range(answer_n):
-        
-        if buf[0] & 0xc0:
-            offset = buf[0]

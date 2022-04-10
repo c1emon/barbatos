@@ -217,10 +217,14 @@ def _parse_domain_label(buf, offset_pointer=None):
     And the last "0" indicate the domian string has finished.
     Every length[x] should be '00xx xxxx' in binary format. The first two bits should be zeros.
     
+    Message compression:    
+    For compressed names, length[x] should be '11xx xxxx' in binary format.
+    The six bits 'xx xxxx' and the follow byte equal to offset.
+    
     The input buf must come first with vaild domain label. And this function just parses first domain label.
     Args:
         buf (bytearray): input byte array
-
+        offset_pointer (dict): pointers to compressed domain names (optional, None)
     Returns:
         domain (string): domain name
         length (int): length of this domain in buf

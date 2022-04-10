@@ -42,6 +42,7 @@ DNS packet parser/serializer
 # 
 
 
+from unicodedata import name
 from ryu.lib.packet import packet_base
 import struct
 
@@ -70,6 +71,7 @@ class dns(packet_base.PacketBase):
     @classmethod
     def parser(cls, buf):
         
+        pos = 0
         rest_buf = buf
         (id, flags1, flags2, 
          qdcount, ancount, 
@@ -77,27 +79,27 @@ class dns(packet_base.PacketBase):
         
         qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
         ra, ad, cd, rcode = flags2 & 0x80, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
-        pos = cls._HEADER_LEN
-        rest_buf = rest_buf[pos:]
+        pos += cls._HEADER_LEN
+        rest_buf = rest_buf[cls._HEADER_LEN:]
         
         question, offset_pointer, length = dns_question.parser(rest_buf, qdcount, pos)
         pos += length
-        rest_buf = rest_buf[pos:]
+        rest_buf = rest_buf[length:]
         
         if ancount:
-            answer, offset_pointer, length = resourceRecord.parser(rest_buf, ancount, pos, offset_pointer)
+            answer, offset_pointer, length = record.parser(rest_buf, ancount, pos, offset_pointer)
             pos += length
-            rest_buf = rest_buf[pos:]
+            rest_buf = rest_buf[length:]
         
         if nscount:
-            authority, offset_pointer, length = resourceRecord.parser(rest_buf, nscount, pos, offset_pointer)
+            authority, offset_pointer, length = record.parser(rest_buf, nscount, pos, offset_pointer)
             pos += length
-            rest_buf = rest_buf[pos:]
+            rest_buf = rest_buf[length:]
             
         if arcount:
-            additional, offset_pointer, length = resourceRecord.parser(rest_buf, arcount, pos, offset_pointer)
+            additional, offset_pointer, length = record.parser(rest_buf, arcount, pos, offset_pointer)
             pos += length
-            rest_buf = rest_buf[pos:]
+            rest_buf = rest_buf[length:]
         
         
         return (
@@ -143,9 +145,9 @@ class dns_question(object):
         pass
     
    
-class resourceRecord(object):
+class record(object):
     
-    _RRPROPS = "!HHHH"
+    _RRPROPS = "!HHIH"
     _RRPROPS_LEN = struct.calcsize(_RRPROPS)
     
     def __init__(self, record) -> None:
@@ -154,18 +156,17 @@ class resourceRecord(object):
     @classmethod
     def parser(cls, buf, count, offset, offset_pointer):
         pos = 0
-        _offset_pointer = {}
         record = []
-        for _ in range(count):
+        for i in range(count):
             name , _pos, p = _parse_domain_label(buf[pos:], offset_pointer)
             if not p:
-                _offset_pointer[str(offset + pos)] = name
+                offset_pointer[str(offset + pos)] = name
             pos += _pos
             
             (rrtype, rrclass, ttl, rdlength) = struct.unpack_from(cls._RRPROPS, buf[pos:])
             pos += cls._RRPROPS_LEN
             
-            rdata = _rdata.parser(buf[pos:], rrtype, rrclass)
+            rdata = _rdata.parser(buf[pos:pos+rdlength], rrtype, rrclass, offset + pos, offset_pointer)
             pos += rdlength
             
             record.append({
@@ -178,7 +179,7 @@ class resourceRecord(object):
             })
             
             
-        return cls(record), {**offset_pointer, **_offset_pointer}, pos
+        return cls(record), offset_pointer, pos
     
     def serialize(self, _payload=None, _prev=None):
         pass
@@ -194,13 +195,14 @@ class _rdata(object):
         self.rdata = rdata
     
     @classmethod
-    def parser(cls, buf, rrtype, rrclass):
+    def parser(cls, buf, rrtype, rrclass, offset=None, offset_pointer=None):
         if rrtype == 0x01 and rrclass == 0x01:
             ipv4_addr = struct.unpack_from(cls._IPV4_ADDR_STR, buf)
-            return cls("ipv4", ".".join(ipv4_addr))
+            return cls("ipv4", ".".join([str(i) for i in ipv4_addr]))
         
         if rrtype == 0x05 and rrclass == 0x01:
             cname, _, _ = _parse_domain_label(buf)
+            offset_pointer[str(offset)] = name
             return cls("cname", cname)
     
     def serialize(self, _payload=None, _prev=None):
@@ -253,13 +255,18 @@ def _parse_domain_label(buf, offset_pointer=None):
     name = []
     while buf[pos] != 0x00:
         if pos == 0 and buf[pos] & 0xc0:
+            
             offset = ((buf[pos] & 0x3f) << 8) | (buf[pos+1] & 0xff)
             return offset_pointer[str(offset)], 2, True
         else:    
             length = buf[pos]
-            s = struct.unpack_from("!%ds" % length, buf[pos+1:])[0]
+            pos += 1
+            
+            s = struct.unpack_from("!%ds" % length, buf[pos:])[0]
+            pos += length
+            
             name.append(str(s, encoding='utf-8'))
-        pos += (length+1)
+        
     
     return ".".join(name), pos+1, False
     

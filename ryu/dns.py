@@ -16,11 +16,11 @@ DNS packet parser/serializer
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 #  |                      Questions (variable)                     |
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-#  |                      Answer RRs [] :::                        |
+#  |                      Answer RRs (variable)                    |
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-#  |                     Authority RRs [] :::                      |
+#  |                     Authority RRs (variable)                  |
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-#  |                    Additional RRs [] :::                      |
+#  |                    Additional RRs (variable)                  |
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 # 
 # flags format(16 bits):
@@ -36,13 +36,9 @@ DNS packet parser/serializer
 #  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 #  Query Name format shown in function ```_parse_domain_label```
 # 
-# 
-# 
-# 
+# 3 kinds of resource record share same formart.
 # 
 
-
-from unicodedata import name
 from ryu.lib.packet import packet_base
 import struct
 
@@ -202,7 +198,7 @@ class _rdata(object):
         
         if rrtype == 0x05 and rrclass == 0x01:
             cname, _, _ = _parse_domain_label(buf)
-            offset_pointer[str(offset)] = name
+            offset_pointer[str(offset)] = cname
             return cls("cname", cname)
     
     def serialize(self, _payload=None, _prev=None):

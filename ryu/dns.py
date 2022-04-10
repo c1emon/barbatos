@@ -37,7 +37,18 @@ DNS packet parser/serializer
 #  Query Name format shown in function ```_parse_domain_label```
 # 
 # 3 kinds of resource record share same formart.
-# 
+# single resource record:
+#  0                   1                   2                   3
+#  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |                           Name (variable)                     |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |             type              |            class              |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |                              TTL                              |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+#  |            RdLength           |      Rdata (variable)         |
+#  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 
 from ryu.lib.packet import packet_base
 import struct
@@ -220,6 +231,11 @@ def _parse_domain_label(buf, offset_pointer=None):
     Message compression:    
     For compressed names, length[x] should be '11xx xxxx' in binary format.
     The six bits 'xx xxxx' and the follow byte equal to offset.
+    |      length[x]          |                     |
+    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    | 1  1|                OFFSET                   |
+    +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
+    |2bits|                14 bits                  |
     
     The input buf must come first with vaild domain label. And this function just parses first domain label.
     Args:

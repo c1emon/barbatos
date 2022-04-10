@@ -181,7 +181,6 @@ class record(object):
         pass
 
 
-
 class _rdata(object):
     
     _IPV4_ADDR_STR = "!BBBB"
@@ -204,28 +203,7 @@ class _rdata(object):
     def serialize(self, _payload=None, _prev=None):
         pass
     
-class dns_authority(object):
-    def __init__(self) -> None:
-        pass
-    
-    @classmethod
-    def parser(cls, buf, nscount):
-        pass
-    
-    def serialize(self, _payload=None, _prev=None):
-        pass
 
-class dns_additional(object):
-    def __init__(self) -> None:
-        pass
-    
-    @classmethod
-    def parser(cls, buf, arcount):
-        pass
-    
-    def serialize(self, _payload=None, _prev=None):
-        pass
-    
 def _parse_domain_label(buf, offset_pointer=None):
     """Domain name in the label format shown below:
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+

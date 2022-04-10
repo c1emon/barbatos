@@ -70,68 +70,138 @@ class dns(packet_base.PacketBase):
     @classmethod
     def parser(cls, buf):
         
+        rest_buf = buf
         (id, flags1, flags2, 
          qdcount, ancount, 
-         nscount, arcount) = struct.unpack_from(cls._DNS_PACK_HEADER, buf)
-        rest_buf = buf[cls._HEADER_LEN:]
+         nscount, arcount) = struct.unpack_from(cls._DNS_PACK_HEADER, rest_buf)
         
         qr, opcode, aa, tc, rd = flags1 & 0x80, flags1 & 0x78, flags1 & 0x04, flags1 & 0x02, flags1 & 0x01
         ra, ad, cd, rcode = flags2 & 0x80, flags2 & 0x20, flags2 & 0x10, flags2 & 0x0f
+        pos = cls._HEADER_LEN
+        rest_buf = rest_buf[pos:]
         
-        q, rest_buf = dns_question.parser(rest_buf, qdcount)
+        question, offset_pointer, length = dns_question.parser(rest_buf, qdcount, pos)
+        pos += length
+        rest_buf = rest_buf[pos:]
         
-        if qr:
-            # resp
-            pass
+        if ancount:
+            answer, offset_pointer, length = resourceRecord.parser(rest_buf, ancount, pos, offset_pointer)
+            pos += length
+            rest_buf = rest_buf[pos:]
+        
+        if nscount:
+            authority, offset_pointer, length = resourceRecord.parser(rest_buf, nscount, pos, offset_pointer)
+            pos += length
+            rest_buf = rest_buf[pos:]
+            
+        if arcount:
+            additional, offset_pointer, length = resourceRecord.parser(rest_buf, arcount, pos, offset_pointer)
+            pos += length
+            rest_buf = rest_buf[pos:]
+        
         
         return (
             cls(id, qr, opcode, aa, tc, rd, ra, ad, cd, rcode, qdcount, ancount, nscount, arcount),
             None,
-            rest_buf
+            rest_buf if rest_buf else None
         )
     
     def serialize(self, _payload=None, _prev=None):
         pass
 
-   
 
 class dns_question(object):
     
-    OFFSET = dns._HEADER_LEN
+    _HEADER_OFFSET = dns._HEADER_LEN
+    _QPROPS = "!HH"
+    _QPROPS_LEN = struct.calcsize(_QPROPS)
     
-    def __init__(self, questions):
-        self.questions = questions
+    def __init__(self, question):
+        self.question = question
     
     @classmethod
-    def parser(cls, buf, qdcount):
+    def parser(cls, buf, qdcount, offset=12):
         pos = 0
-        offsets = [0]
-        questions = {}
-        for i in range(qdcount):
-            domain , p = _parse_domain_label(buf[pos:])
-            pos += p
-            (qtype, qclass) = struct.unpack_from("!HH", buf[pos:])
-            pos += 4
-            questions[domain] = {
-                "offset": cls.OFFSET + offsets[i],
-                "type": qtype,
-                "class": qclass
-            }
-            offsets.append(pos)
+        offset_pointer = {}
+        question = {}
+        for _ in range(qdcount):
+            name , _pos, _ = _parse_domain_label(buf[pos:])
+            offset_pointer[str(offset + pos)] = name
+            pos += _pos
             
-        return cls(questions), buf[pos:]
+            (qtype, qclass) = struct.unpack_from(cls._QPROPS, buf[pos:])
+            pos += cls._QPROPS_LEN
+            
+            question[name] = {
+                "qtype": qtype,
+                "qclass": qclass
+            }
+            
+        return cls(question), offset_pointer, pos
     
     def serialize(self, _payload=None, _prev=None):
         pass
     
+   
+class resourceRecord(object):
     
-class dns_answer(object):
-    def __init__(self) -> None:
-        pass
+    _RRPROPS = "!HHHH"
+    _RRPROPS_LEN = struct.calcsize(_RRPROPS)
+    
+    def __init__(self, record) -> None:
+        self.record = record
     
     @classmethod
-    def parser(cls, buf, ancount):
+    def parser(cls, buf, count, offset, offset_pointer):
+        pos = 0
+        _offset_pointer = {}
+        record = []
+        for _ in range(count):
+            name , _pos, p = _parse_domain_label(buf[pos:], offset_pointer)
+            if not p:
+                _offset_pointer[str(offset + pos)] = name
+            pos += _pos
+            
+            (rrtype, rrclass, ttl, rdlength) = struct.unpack_from(cls._RRPROPS, buf[pos:])
+            pos += cls._RRPROPS_LEN
+            
+            rdata = _rdata.parser(buf[pos:], rrtype, rrclass)
+            pos += rdlength
+            
+            record.append({
+                "name": name,
+                "type": rrtype,
+                "class": rrclass,
+                "ttl": ttl,
+                "rdlength": rdlength,
+                "rdata": rdata
+            })
+            
+            
+        return cls(record), {**offset_pointer, **_offset_pointer}, pos
+    
+    def serialize(self, _payload=None, _prev=None):
         pass
+
+
+
+class _rdata(object):
+    
+    _IPV4_ADDR_STR = "!BBBB"
+    
+    def __init__(self, rtype, rdata) -> None:
+        self.rtype = rtype
+        self.rdata = rdata
+    
+    @classmethod
+    def parser(cls, buf, rrtype, rrclass):
+        if rrtype == 0x01 and rrclass == 0x01:
+            ipv4_addr = struct.unpack_from(cls._IPV4_ADDR_STR, buf)
+            return cls("ipv4", ".".join(ipv4_addr))
+        
+        if rrtype == 0x05 and rrclass == 0x01:
+            cname, _, _ = _parse_domain_label(buf)
+            return cls("cname", cname)
     
     def serialize(self, _payload=None, _prev=None):
         pass
@@ -158,7 +228,7 @@ class dns_additional(object):
     def serialize(self, _payload=None, _prev=None):
         pass
     
-def _parse_domain_label(buf):
+def _parse_domain_label(buf, offset_pointer=None):
     """Domain name in the label format shown below:
     +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     length[0](8bit) | char[0] | char[1] | .... | char[length[0]-1] |
@@ -180,13 +250,16 @@ def _parse_domain_label(buf):
         length (int): length of this domain in buf
     """
     pos = 0
-    domain = []
+    name = []
     while buf[pos] != 0x00:
-        len = buf[pos]
-        # TODO: assert len & 0xc0
-        s = struct.unpack_from("!%ds" % len, buf[pos+1:])[0]
-        domain.append(str(s, encoding='utf-8'))
-        pos += (len+1)
+        if pos == 0 and buf[pos] & 0xc0:
+            offset = ((buf[pos] & 0x3f) << 8) | (buf[pos+1] & 0xff)
+            return offset_pointer[str(offset)], 2, True
+        else:    
+            length = buf[pos]
+            s = struct.unpack_from("!%ds" % length, buf[pos+1:])[0]
+            name.append(str(s, encoding='utf-8'))
+        pos += (length+1)
     
-    return ".".join(domain), pos+1
+    return ".".join(name), pos+1, False
     

@@ -9,7 +9,7 @@ from netaddr import IPAddress, IPSet
 from actions import *
 from utils import *
 from handler import *
-from dns import dns
+import dns.message
 
 import logging
 from numba import jit
@@ -78,8 +78,8 @@ class Tproxy(app_manager.RyuApp):
         if udp_pkg and (pkg.dst_port == 53 or pkg.src_port == 53):
             # dns req
             # hack to proxy:53
-            dns_pkg, _, _ = dns.parser(p.protocols[-1])
-            if not dns_pkg.qr:
+            dns_msg = dns.message.from_wire(p.protocols[-1])
+            if not dns_msg.qr:
                 self.logger.info("dns query(%s -> %s[%s])", ipv4_pkg.src, ipv4_pkg.dst, PROXY_GW["ip"])
                 actions = [
                     parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
@@ -89,10 +89,10 @@ class Tproxy(app_manager.RyuApp):
                     datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                     actions=actions, data=p)
                 datapath.send_msg(out)
-                self.dns_req[ipv4_pkg.src] = {[str(dns_pkg.id)] : ipv4_pkg.dst}
+                self.dns_req[ipv4_pkg.src] = {[str(dns_msg.id)] : ipv4_pkg.dst}
                 return
             else:
-                raw_src_ip = self.dns_req[ipv4_pkg.dst].pop(str(dns_pkg.id))
+                raw_src_ip = self.dns_req[ipv4_pkg.dst].pop(str(dns_msg.id))
                 self.logger.info("dns response(%s[%s] -> %s): %s", ipv4_pkg.src, raw_src_ip, ipv4_pkg.dst)
                 
                 actions = [

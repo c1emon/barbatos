@@ -9,14 +9,14 @@ from netaddr import IPAddress, IPSet
 from actions import *
 from utils import *
 from handler import *
+from dns import dns
 
 import logging
 from numba import jit
 
 
 PROXY_HOSTS = [
-    {"ip": "10.0.0.1"},
-    {"mac": "09:0e:06:77:72:4a"}
+    {"ip": "10.0.0.1"}
 ]
 
 
@@ -41,6 +41,12 @@ class Tproxy(app_manager.RyuApp):
             self.logger = logging.getLogger(self.__class__.LOGGER_NAME)
         else:
             self.logger = logging.getLogger(self.name)
+        self.dns_req = {}
+        self.proxy_ips = []
+        for host in PROXY_HOSTS:
+            if "ip" not in host:
+                continue
+            self.proxy_ips.append(host["ip"])
             
         
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -67,33 +73,38 @@ class Tproxy(app_manager.RyuApp):
         udp_pkg = p.get_protocol(udp.udp)
         # TODO: assert ipv4_pkg not None
         pkg = tcp_pkg if tcp_pkg else udp_pkg
-        # body = eth_pkg.protocols[-1]
-
-        if udp_pkg and pkg.dst_port == 53 and ipv4_pkg.src in self.proxy_ips:
+        
+    
+        if udp_pkg and (pkg.dst_port == 53 or pkg.src_port == 53):
             # dns req
             # hack to proxy:53
-            self.logger.info("dns request(%s -> %s): %s", ipv4_pkg.src, ipv4_pkg.dst, udp_pkg.data)
-            actions = [
-                parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
-                parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
-            out = parser.OFPPacketOut(
-                datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
-                actions=actions, data=p)
-            datapath.send_msg(out)
-            return
+            dns_pkg, _, _ = dns.parser(p.protocols[-1])
+            if not dns_pkg.qr:
+                self.logger.info("dns query(%s -> %s[%s])", ipv4_pkg.src, ipv4_pkg.dst, PROXY_GW["ip"])
+                actions = [
+                    parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
+                    parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
+                    parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
+                out = parser.OFPPacketOut(
+                    datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
+                    actions=actions, data=p)
+                datapath.send_msg(out)
+                self.dns_req[ipv4_pkg.src] = {[str(dns_pkg.id)] : ipv4_pkg.dst}
+                return
+            else:
+                raw_src_ip = self.dns_req[ipv4_pkg.dst].pop(str(dns_pkg.id))
+                self.logger.info("dns response(%s[%s] -> %s): %s", ipv4_pkg.src, raw_src_ip, ipv4_pkg.dst)
+                
+                actions = [
+                    parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
+                    parser.OFPActionSetField(ipv4_src=raw_src_ip),
+                    parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
+                out = parser.OFPPacketOut(
+                    datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
+                    actions=actions, data=p)
+                datapath.send_msg(out)
+                return
         
-        if udp_pkg and pkg.src_port == 53 and ipv4_pkg.src == str(PROXY_GW["ip"]) and ipv4_pkg.dst in self.proxy_ips:
-            self.logger.info("dns(p -> h): %s", udp_pkg)
-            actions = [
-                parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
-                parser.OFPActionSetField(ipv4_src="114.114.114.114"),
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL, ofproto.OFPCML_NO_BUFFER)]
-            out = parser.OFPPacketOut(
-                datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
-                actions=actions, data=p)
-            datapath.send_msg(out)
-            return
         
         if ipv4_pkg.src in self.proxy_ips and is_public(ipv4_pkg.dst):
             # TODO: host -> proxy

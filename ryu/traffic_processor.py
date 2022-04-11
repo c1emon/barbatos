@@ -10,6 +10,7 @@ from actions import *
 from utils import *
 from handler import *
 import dns.message
+import dns.flags
 
 import logging
 from numba import jit
@@ -72,15 +73,14 @@ class Tproxy(app_manager.RyuApp):
         tcp_pkg = p.get_protocol(tcp.tcp)
         udp_pkg = p.get_protocol(udp.udp)
         # TODO: assert ipv4_pkg not None
-        pkg = tcp_pkg if tcp_pkg else udp_pkg
         
     
-        if udp_pkg and (pkg.dst_port == 53 or pkg.src_port == 53):
+        if udp_pkg and (udp_pkg.dst_port == 53 or udp_pkg.src_port == 53):
             # dns req
             # hack to proxy:53
             dns_msg = dns.message.from_wire(p.protocols[-1])
-            if not dns_msg.qr:
-                self.logger.info("dns query(%s -> %s[%s])", ipv4_pkg.src, ipv4_pkg.dst, PROXY_GW["ip"])
+            if not dns_msg.flags & dns.flags.QR:
+                self.logger.info("dns query(%s -> %s[%s]): 0x%x", ipv4_pkg.src, ipv4_pkg.dst, PROXY_GW["ip"], dns_msg.id)
                 actions = [
                     parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
                     parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
@@ -89,11 +89,11 @@ class Tproxy(app_manager.RyuApp):
                     datapath=datapath, buffer_id=msg.buffer_id, in_port=msg.match["in_port"],
                     actions=actions, data=p)
                 datapath.send_msg(out)
-                self.dns_req[ipv4_pkg.src] = {[str(dns_msg.id)] : ipv4_pkg.dst}
+                self.dns_req[ipv4_pkg.src] = {str(dns_msg.id) : ipv4_pkg.dst}
                 return
             else:
                 raw_src_ip = self.dns_req[ipv4_pkg.dst].pop(str(dns_msg.id))
-                self.logger.info("dns response(%s[%s] -> %s): %s", ipv4_pkg.src, raw_src_ip, ipv4_pkg.dst)
+                self.logger.info("dns response(%s[%s] -> %s): 0x%x", ipv4_pkg.src, raw_src_ip, ipv4_pkg.dst, dns_msg.id)
                 
                 actions = [
                     parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
@@ -105,7 +105,7 @@ class Tproxy(app_manager.RyuApp):
                 datapath.send_msg(out)
                 return
         
-        
+        pkg = tcp_pkg if tcp_pkg else udp_pkg
         if ipv4_pkg.src in self.proxy_ips and is_public(ipv4_pkg.dst):
             # TODO: host -> proxy
             

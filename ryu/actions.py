@@ -13,31 +13,61 @@ def add_proxy_flow(datapath, match={}, priority=20):
     
 def add_host_proxy_flow(datapath, hosts, default_gw, proxy_gw, priority=20):
 
-    out_match = dict(
+    out_match_tcp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
-            eth_dst=default_gw["mac"])
+            eth_dst=default_gw["mac"],
+            ip_proto=6)
     
-    in_match = dict(
+    out_match_udp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
-            eth_src=proxy_gw["mac"])
+            eth_dst=default_gw["mac"],
+            ip_proto=17)
+    
+    in_match_tcp = dict(
+            eth_type=ether_types.ETH_TYPE_IP,
+            eth_src=proxy_gw["mac"],
+            ip_proto=6)
+    
+    in_match_udp = dict(
+            eth_type=ether_types.ETH_TYPE_IP,
+            eth_src=proxy_gw["mac"],
+            ip_proto=17)
     
     for host in hosts:
         if "mac" in host:
-            out_match.update(eth_src=str(host["mac"]))
-            add_proxy_flow(datapath, out_match, priority)
-            del out_match["eth_src"]
             
-            in_match.update(eth_dst=str(host["mac"]))
-            add_proxy_flow(datapath, in_match, priority)
-            del in_match["eth_dst"]
+            out_match_tcp.update(eth_src=str(host["mac"]))
+            add_proxy_flow(datapath, out_match_tcp, priority)
+            del out_match_tcp["eth_src"]
+            
+            out_match_udp.update(eth_src=str(host["mac"]))
+            add_proxy_flow(datapath, out_match_udp, priority)
+            del out_match_udp["eth_src"]
+            
+            in_match_tcp.update(eth_dst=str(host["mac"]))
+            add_proxy_flow(datapath, in_match_tcp, priority)
+            del in_match_tcp["eth_dst"]
+            
+            in_match_udp.update(eth_dst=str(host["mac"]))
+            add_proxy_flow(datapath, in_match_udp, priority)
+            del in_match_udp["eth_dst"]
         else:
-            out_match.update(ipv4_src=str(host["ip"]))
-            add_proxy_flow(datapath, out_match, priority)
-            del out_match["ipv4_src"]
             
-            in_match.update(ipv4_dst=str(host["ip"]))
-            add_proxy_flow(datapath, in_match, priority)
-            del in_match["ipv4_dst"]
+            out_match_tcp.update(ipv4_src=str(host["ip"]))
+            add_proxy_flow(datapath, out_match_tcp, priority)
+            del out_match_tcp["ipv4_src"]
+            
+            out_match_udp.update(ipv4_src=str(host["ip"]))
+            add_proxy_flow(datapath, out_match_udp, priority)
+            del out_match_udp["ipv4_src"]
+            
+            in_match_tcp.update(ipv4_dst=str(host["ip"]))
+            add_proxy_flow(datapath, in_match_tcp, priority)
+            del in_match_tcp["ipv4_dst"]
+            
+            in_match_udp.update(ipv4_dst=str(host["ip"]))
+            add_proxy_flow(datapath, in_match_udp, priority)
+            del in_match_udp["ipv4_dst"]
             
 def add_normal_flow(datapath, match={}, priority=0):
     ofproto = datapath.ofproto

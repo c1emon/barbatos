@@ -1,4 +1,4 @@
-from ryu.lib.packet import ether_types
+from ryu.lib.packet import ether_types, in_proto
 from utils import PRIVATE_IPS
 
 def add_proxy_flow(datapath, match={}, priority=20):
@@ -16,22 +16,22 @@ def add_host_proxy_flow(datapath, hosts, default_gw, proxy_gw, priority=20):
     out_match_tcp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
             eth_dst=default_gw["mac"],
-            ip_proto=6)
+            ip_proto=in_proto.IPPROTO_TCP)
     
     out_match_udp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
             eth_dst=default_gw["mac"],
-            ip_proto=17)
+            ip_proto=in_proto.IPPROTO_UDP)
     
     in_match_tcp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
             eth_src=proxy_gw["mac"],
-            ip_proto=6)
+            ip_proto=in_proto.IPPROTO_TCP)
     
     in_match_udp = dict(
             eth_type=ether_types.ETH_TYPE_IP,
             eth_src=proxy_gw["mac"],
-            ip_proto=17)
+            ip_proto=in_proto.IPPROTO_UDP)
     
     for host in hosts:
         if "mac" in host:
@@ -87,7 +87,7 @@ def add_private_flow(datapath, priority=50):
     match = dict(eth_type=ether_types.ETH_TYPE_IP)
     for cidr in PRIVATE_IPS.iter_cidrs():
         c = str(cidr)
-        match.update(ipv4_dst=c, ipv4_src=c)
+        match.update(ipv4_dst=c)
         mod = build_flow(datapath, priority, actions, match)
         datapath.send_msg(mod)
     

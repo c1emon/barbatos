@@ -2,9 +2,9 @@ from ryu.base import app_manager
 from ryu.controller import ofp_event
 from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
 from ryu.controller.handler import set_ev_cls
-from ryu.lib.packet import packet, ether_types, ethernet, arp, ipv4, tcp, udp
+from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
-from netaddr import IPAddress, IPSet
+from netaddr import IPAddress
 
 from actions import *
 from utils import *

@@ -1,9 +1,10 @@
 from ryu.base import app_manager
 from ryu.controller import ofp_event
-from ryu.controller.handler import MAIN_DISPATCHER, CONFIG_DISPATCHER
-from ryu.controller.handler import set_ev_cls
+from ryu.controller.handler import set_ev_cls, MAIN_DISPATCHER, CONFIG_DISPATCHER
+
 from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
+
 from netaddr import IPAddress
 
 from actions import *
@@ -71,10 +72,7 @@ class Tproxy(app_manager.RyuApp):
                 parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
                 parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
-            out = parser.OFPPacketOut(
-                datapath=datapath, buffer_id=msg.buffer_id, in_port=ofproto.OFPP_CONTROLLER,
-                actions=actions, data=pkg)
-            datapath.send_msg(out)
+            send_packet_out(datapath, actions, msg.buffer_id, pkg)
             if not ipv4_src in self.dns_req:
                 self.dns_req[ipv4_src] = {}
             self.dns_req[ipv4_src].update({ id : ipv4_dst})
@@ -86,10 +84,7 @@ class Tproxy(app_manager.RyuApp):
                 parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
                 parser.OFPActionSetField(ipv4_src=raw_src_ip),
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
-            out = parser.OFPPacketOut(
-                datapath=datapath, buffer_id=msg.buffer_id, in_port=ofproto.OFPP_CONTROLLER,
-                actions=actions, data=pkg)
-            datapath.send_msg(out)
+            send_packet_out(datapath, actions, msg.buffer_id, pkg)
         
     def _out_traffic_handler(self, datapath, pkg, msg):
         ofproto = datapath.ofproto
@@ -98,10 +93,7 @@ class Tproxy(app_manager.RyuApp):
         actions = [
             parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]), 
             parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
-        out = parser.OFPPacketOut(
-            datapath=datapath, buffer_id=msg.buffer_id, in_port=ofproto.OFPP_CONTROLLER,
-            actions=actions, data=pkg)
-        datapath.send_msg(out)
+        send_packet_out(datapath, actions, msg.buffer_id, pkg)
         
     def _in_traffic_handler(self, datapath, pkg, msg):
         ofproto = datapath.ofproto
@@ -110,17 +102,12 @@ class Tproxy(app_manager.RyuApp):
         actions = [
             parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
             parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
-        out = parser.OFPPacketOut(
-            datapath=datapath, buffer_id=msg.buffer_id, in_port=ofproto.OFPP_CONTROLLER,
-            actions=actions, data=pkg)
-        datapath.send_msg(out)
-   
+        send_packet_out(datapath, actions, msg.buffer_id, pkg)
+
     @set_ev_cls(ofp_event.EventOFPPacketIn, MAIN_DISPATCHER)
     def packet_in_handler(self, ev):
         msg = ev.msg
         datapath = msg.datapath
-        ofproto = datapath.ofproto
-        parser = datapath.ofproto_parser
         
         p = packet.Packet(msg.data)
         
@@ -138,14 +125,12 @@ class Tproxy(app_manager.RyuApp):
             
         pkg = tcp_pkg if tcp_pkg else udp_pkg
         if pkg and ipv4_src in self.proxy_ips and is_public(ipv4_dst):
-            # TODO: host -> proxy
             self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, PROXY_GW["mac"])
             self._out_traffic_handler(datapath, p, msg)
             return
             
         
         if pkg and ipv4_dst in self.proxy_ips and is_public(ipv4_src):
-            # TODO: proxy -> host
             self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_dst, eth_pkg.dst)
             self._in_traffic_handler(datapath, p, msg)
             return

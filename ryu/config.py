@@ -28,11 +28,11 @@ class conf(object):
     
     @property 
     def proxy_ips(self):
-        return self.proxy_ips
+        return self._proxy_ips
     
     @property
     def proxy_macs(self):
-        return self.proxy_macs
+        return self._proxy_macs
         
     def __str__(self):
         s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)

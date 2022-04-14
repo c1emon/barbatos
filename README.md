@@ -1,7 +1,7 @@
 # Barbatos
 A traffic controller/proxy based on openvswitch and ryu controller.
 ## network architecture
-![network_arch](https://github.com/lexsaints/powershell/blob/master/doc/network_arch.svg)
+![network_arch](https://github.com/cjw7360/barbatos/blob/main/doc/network_arch.svg)
 Traffic between hosts to be proxied and two gateways should all go through the openflow switch. By this way, controller can rule those tarffic.
 
 ## require

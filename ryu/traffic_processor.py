@@ -5,8 +5,6 @@ from ryu.controller.handler import set_ev_cls, MAIN_DISPATCHER, CONFIG_DISPATCHE
 from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 
-from netaddr import IPAddress
-
 from actions import *
 from utils import *
 from handler import *
@@ -31,10 +29,6 @@ class Tproxy(app_manager.RyuApp):
         
         self.c = conf("barbatos.yaml")
         
-        self.proxy_ips = []
-        for host in self.c.proxy_hosts:
-            if host.ip:
-                self.proxy_ips.append(host.ip)
             
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -109,13 +103,13 @@ class Tproxy(app_manager.RyuApp):
             return
             
         pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and ipv4_src in self.proxy_ips and is_public(ipv4_dst):
+        if pkg and ipv4_src in self.c.proxy_ips and is_public(ipv4_dst):
             self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
             self._out_traffic_handler(datapath, p, msg)
             return
             
         
-        if pkg and ipv4_dst in self.proxy_ips and is_public(ipv4_src):
+        if pkg and ipv4_dst in self.c.proxy_ips and is_public(ipv4_src):
             self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
             self._in_traffic_handler(datapath, p, msg)
             return

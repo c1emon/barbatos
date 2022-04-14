@@ -5,33 +5,15 @@ from ryu.controller.handler import set_ev_cls, MAIN_DISPATCHER, CONFIG_DISPATCHE
 from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
 from ryu.ofproto import ofproto_v1_3
 
-from netaddr import IPAddress
-
 from actions import *
 from utils import *
 from handler import *
+from config import *
+
 import dns.message
 import dns.flags
 
 import logging
-# from numba import jit
-
-
-PROXY_HOSTS = [
-    {"ip": "10.0.0.1"}
-]
-
-
-DEFAULT_GW = {
-    "ip": IPAddress("10.0.0.254"),
-    "mac": "76:7e:26:77:72:4a"
-}
-
-PROXY_GW = {
-    "ip": IPAddress("10.0.0.253"),
-    "mac": "76:7e:26:77:72:4b"
-}
-
 
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
@@ -44,19 +26,16 @@ class Tproxy(app_manager.RyuApp):
         else:
             self.logger = logging.getLogger(self.name)
         self.dns_req = {}
-        self.proxy_ips = []
-        for host in PROXY_HOSTS:
-            if "ip" not in host:
-                continue
-            self.proxy_ips.append(host["ip"])
-            
         
+        self.c = conf("barbatos.yaml")
+        
+            
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
         
-        add_dns_proxy_flow(datapath, PROXY_HOSTS)
-        add_host_proxy_flow(datapath, PROXY_HOSTS, DEFAULT_GW, PROXY_GW)
+        add_dns_proxy_flow(datapath, self.c.proxy_hosts)
+        add_host_proxy_flow(datapath, self.c.proxy_hosts, self.c.default_gateway, self.c.proxy_gateway)
         add_private_flow(datapath)
         add_normal_flow(datapath)
         
@@ -67,10 +46,10 @@ class Tproxy(app_manager.RyuApp):
         dns_msg = dns.message.from_wire(pkg.protocols[-1])
         id = "0x%x" % dns_msg.id
         if not dns_msg.flags & dns.flags.QR:
-            self.logger.debug("dns query(%s -> %s[%s]): %s", ipv4_src, ipv4_dst, PROXY_GW["ip"], id)
+            self.logger.debug("dns query(%s -> %s[%s]): %s", ipv4_src, ipv4_dst, self.c.proxy_gateway.ip, id)
             actions = [
-                parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]),
-                parser.OFPActionSetField(ipv4_dst=str(PROXY_GW["ip"])),
+                parser.OFPActionSetField(eth_dst=self.c.proxy_gateway.mac),
+                parser.OFPActionSetField(ipv4_dst=self.c.proxy_gateway.ip),
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
             send_packet_out(datapath, actions, msg.buffer_id, pkg)
             if not ipv4_src in self.dns_req:
@@ -81,7 +60,7 @@ class Tproxy(app_manager.RyuApp):
             self.logger.debug("dns response(%s[%s] -> %s): %s", ipv4_src, raw_src_ip, ipv4_dst, id)
             
             actions = [
-                parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
+                parser.OFPActionSetField(eth_src=self.c.default_gateway.mac),
                 parser.OFPActionSetField(ipv4_src=raw_src_ip),
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
             send_packet_out(datapath, actions, msg.buffer_id, pkg)
@@ -91,7 +70,7 @@ class Tproxy(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         
         actions = [
-            parser.OFPActionSetField(eth_dst=PROXY_GW["mac"]), 
+            parser.OFPActionSetField(eth_dst=self.c.proxy_gateway.mac),
             parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
         send_packet_out(datapath, actions, msg.buffer_id, pkg)
         
@@ -100,7 +79,7 @@ class Tproxy(app_manager.RyuApp):
         parser = datapath.ofproto_parser
         
         actions = [
-            parser.OFPActionSetField(eth_src=DEFAULT_GW["mac"]),
+            parser.OFPActionSetField(eth_src=self.c.default_gateway.mac),
             parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
         send_packet_out(datapath, actions, msg.buffer_id, pkg)
 
@@ -124,14 +103,14 @@ class Tproxy(app_manager.RyuApp):
             return
             
         pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and ipv4_src in self.proxy_ips and is_public(ipv4_dst):
-            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, PROXY_GW["mac"])
+        if pkg and ipv4_src in self.c.proxy_ips and is_public(ipv4_dst):
+            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
             self._out_traffic_handler(datapath, p, msg)
             return
             
         
-        if pkg and ipv4_dst in self.proxy_ips and is_public(ipv4_src):
-            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, DEFAULT_GW["mac"], ipv4_dst, eth_pkg.dst)
+        if pkg and ipv4_dst in self.c.proxy_ips and is_public(ipv4_src):
+            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
             self._in_traffic_handler(datapath, p, msg)
             return
         

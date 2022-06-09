@@ -136,7 +136,7 @@ cleanup() {
     $SURUN "iptables -t mangle -F"
     $SURUN "iptables -t mangle -X clash || true"
 
-    if $PROXY_LOCAL; then
+    if [ ${PROXY_LOCAL} -gt 0 ]; then
         $SURUN "iptables -t mangle -X clash_local || true"
     fi
 }
@@ -147,7 +147,7 @@ case "$ACTION" in
         ;;
     1)
         set_ipt
-        if $PROXY_LOCAL; then
+        if [ ${PROXY_LOCAL} -gt 0 ]; then
             set_ipt_local
         fi
         ;;

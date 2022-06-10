@@ -9,7 +9,7 @@ class dns_redis(object):
         self.r.set(k, json.dumps(v), ex=ttl)
         
     def get(self, k, ttl=30):
-        v = self.r.getex(k, ex=ttl)
+        v = self.r.get(k)
         return json.loads(v) if v else None
     
     

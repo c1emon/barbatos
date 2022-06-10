@@ -32,7 +32,7 @@ class Tproxy(app_manager.RyuApp):
         
         self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
-        
+        self.logger.debug("fakeip: %s", self.c.fakeip)
         
             
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)

@@ -1,4 +1,3 @@
-from tkinter.messagebox import NO
 from netaddr import IPAddress, IPSet
 
 PRIVATE_IPS = IPSet([

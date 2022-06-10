@@ -55,7 +55,7 @@ class conf(object):
     
     @property
     def fakeip(self):
-        self._fakeip
+        return self._fakeip
         
     def __str__(self):
         s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)

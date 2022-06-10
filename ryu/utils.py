@@ -10,13 +10,13 @@ PRIVATE_IPS = IPSet([
     "240.0.0.0/4"
 ])
 
-FAKEIPRANGE = None
 
 def is_public(ip):
     ip = IPAddress(ip)
     return ip.is_unicast() and not ip.is_private()
 
 def set_fakeip(ip):
+    global FAKEIPRANGE
     FAKEIPRANGE = ip
 
 def is_fakeip(ip):

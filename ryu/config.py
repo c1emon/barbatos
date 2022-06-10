@@ -25,7 +25,14 @@ class conf(object):
             self.proxy_hosts.append(host(**h))
         self.default_gateway = host(**conf["default_gateway"][0])
         self.proxy_gateway = host(**conf["proxy_gateway"][0])
-    
+        
+        if "redis" in conf.keys():
+            self._redis_ip = conf['redis']['ip'] if "ip" in conf['redis'].keys() else "127.0.0.1"
+            self._redis_port = int(conf['redis']['port']) if "port" in conf['redis'].keys() else 6379
+        else:
+            self._redis_ip = "127.0.0.1"
+            self._redis_port = 6379
+        
     @property 
     def proxy_ips(self):
         return self._proxy_ips
@@ -33,6 +40,14 @@ class conf(object):
     @property
     def proxy_macs(self):
         return self._proxy_macs
+    
+    @property
+    def redis_ip(self):
+        return self._redis_ip
+    
+    @property
+    def redis_port(self):
+        return self._redis_port
         
     def __str__(self):
         s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)

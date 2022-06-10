@@ -9,6 +9,7 @@ from actions import *
 from utils import *
 from handler import *
 from config import *
+from dns_redis import *
 
 import dns.message
 import dns.flags
@@ -28,6 +29,8 @@ class Tproxy(app_manager.RyuApp):
         self.dns_req = {}
         
         self.c = conf("barbatos.yaml")
+        
+        self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
             
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -52,17 +55,21 @@ class Tproxy(app_manager.RyuApp):
                 parser.OFPActionSetField(ipv4_dst=self.c.proxy_gateway.ip),
                 parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
             send_packet_out(datapath, actions, msg.buffer_id, pkg)
-            if not ipv4_src in self.dns_req:
-                self.dns_req[ipv4_src] = {}
-            self.dns_req[ipv4_src].update({ id : ipv4_dst})
-        else:
-            raw_src_ip = self.dns_req[ipv4_dst].pop(id)
-            self.logger.debug("dns response(%s[%s] -> %s): %s", ipv4_src, raw_src_ip, ipv4_dst, id)
             
-            actions = [
-                parser.OFPActionSetField(eth_src=self.c.default_gateway.mac),
-                parser.OFPActionSetField(ipv4_src=raw_src_ip),
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
+            self.dr.set(id, {"src":ipv4_src, "dst": ipv4_dst})
+        else:
+            v = self.dr.get(id)
+            if not v:
+                self.logger.warning("drop dns response(%s[%s] -> %s): %s", ipv4_src, "null", ipv4_dst, id)
+                actions = []
+            else:
+                raw_dst_ip = v["dst"]
+                self.logger.debug("dns response(%s[%s] -> %s): %s", ipv4_src, raw_dst_ip, ipv4_dst, id)
+                actions = [
+                    parser.OFPActionSetField(eth_src=self.c.default_gateway.mac),
+                    parser.OFPActionSetField(ipv4_src=raw_dst_ip),
+                    parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
+                
             send_packet_out(datapath, actions, msg.buffer_id, pkg)
         
     def _out_traffic_handler(self, datapath, pkg, msg):

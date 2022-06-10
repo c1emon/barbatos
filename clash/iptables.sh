@@ -2,6 +2,9 @@
 
 set -e
 
+USER="clash"
+TPROXY_PORT=7893
+DNS_PORT=1053
 PROXY_LOCAL=0
 ACTION=0
 while [ $# -gt 0 ]; do
@@ -73,16 +76,16 @@ set_ipt() {
     $SURUN "iptables -t mangle -A clash -d 224.0.0.0/4 -j RETURN"
     $SURUN "iptables -t mangle -A clash -d 240.0.0.0/4 -j RETURN"
 
-    # 其他所有流量转向到 7893 端口，并打上 mark
-    $SURUN "iptables -t mangle -A clash -p tcp -j TPROXY --on-port 7893 --tproxy-mark 666"
-    $SURUN "iptables -t mangle -A clash -p udp -j TPROXY --on-port 7893 --tproxy-mark 666"
+    # 其他所有流量转向到 TPROXY_PORT 端口，并打上 mark
+    $SURUN "iptables -t mangle -A clash -p tcp -j TPROXY --on-port ${TPROXY_PORT} --tproxy-mark 666"
+    $SURUN "iptables -t mangle -A clash -p udp -j TPROXY --on-port ${TPROXY_PORT} --tproxy-mark 666"
 
     # 转发所有 DNS 查询到 1053 端口
     # 此操作会导致所有 DNS 请求全部返回虚假 IP(fake ip 198.18.0.1/16)
-    $SURUN "iptables -t nat -I PREROUTING -p udp --dport 53 -j REDIRECT --to 1053"
+    $SURUN "iptables -t nat -I PREROUTING -p udp --dport 53 -j REDIRECT --to ${DNS_PORT}"
 
     # 如果想要 dig 等命令可用, 可以只处理 DNS SERVER 设置为当前内网的 DNS 请求
-    #iptables -t nat -I PREROUTING -p udp --dport 53 -d 192.168.0.0/16 -j REDIRECT --to 1053
+    #iptables -t nat -I PREROUTING -p udp --dport 53 -d 192.168.0.0/16 -j REDIRECT --to ${DNS_PORT}
 
     # 最后让所有流量通过 clash 链进行处理
     $SURUN "iptables -t mangle -A PREROUTING -j clash"
@@ -108,8 +111,8 @@ set_ipt_local() {
     $SURUN "iptables -t mangle -A clash_local -p udp -j MARK --set-mark 666"
     
     # 跳过 clash 程序本身发出的流量, 防止死循环(clash 程序需要使用 "clash" 用户启动)
-    $SURUN "iptables -t mangle -A OUTPUT -p tcp -m owner --uid-owner clash -j RETURN"
-    $SURUN "iptables -t mangle -A OUTPUT -p udp -m owner --uid-owner clash -j RETURN"
+    $SURUN "iptables -t mangle -A OUTPUT -p tcp -m owner --uid-owner ${USER} -j RETURN"
+    $SURUN "iptables -t mangle -A OUTPUT -p udp -m owner --uid-owner ${USER} -j RETURN"
     
     # 让本机发出的流量跳转到 clash_local
     # clash_local 链会为本机流量打 mark, 打过 mark 的流量会重新回到 PREROUTING 上

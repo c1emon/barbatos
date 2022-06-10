@@ -7,12 +7,23 @@ USER="clash"
 CLASH_PATH="/etc/clash"
 CLASH_EXEC="/usr/local/bin/clash"
 
+SERVICE_PATH="/lib/systemd/system/clash.service"
+ACTION=0
 DRY_RUN=${DRY_RUN:-}
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--dry-run)
 			DRY_RUN=1
 			;;
+        install)
+			ACTION=0
+			;;
+        run)
+            ACTION=1
+            ;;
+        uninstall)
+            ACTION=2
+            ;;
 		--*)
 			echo "Illegal option $1"
 			;;
@@ -51,17 +62,27 @@ if is_dryrun; then
 fi
 
 install_clash() {
-    PKG="/tmp/clash-linux-amd64.gz"
-    $RUN "wget $CLASH_URL -O $PKG"
-    $RUN "gzip -d $PKG"
-    $SURUN "mv \"/tmp/clash-linux-amd64-2022.03.21\" $CLASH_EXEC"
+    echo "Start install clash"
+    if [ -f "clash" ]; then
+        echo "Find clash exists locally, just move to $CLASH_EXEC"
+        $SURUN "cp ./clash $CLASH_EXEC"
+    else
+        echo "Download clash..."
+        PKG="/tmp/clash-linux-amd64.gz"
+        $RUN "wget $CLASH_URL -O $PKG"
+        $RUN "gzip -d $PKG"
+        $SURUN "mv \"/tmp/clash-linux-amd64-2022.03.21\" $CLASH_EXEC"
+    fi
+    
     $RUN "chmod +x $CLASH_EXEC"
     $SURUN "mkdir $CLASH_PATH"
     $SURUN "cp iptables.sh $CLASH_PATH"
 }
 
 add_user() {
+    echo "Add user 'clash'"
     $SURUN "useradd -M -s /usr/sbin/nologin $USER"
+    $SURUN "chown -R $USER $CLASH_PATH"
 }
 
 # nft_tproxy() {
@@ -71,9 +92,9 @@ add_user() {
 
 create_service() {
 
-SERVICE_PATH="/lib/systemd/system/clash.service"
-
-SERVICE=$(cat <<- EOF
+    echo "Create service for clash"
+    
+    SERVICE=$(cat <<- EOF
 [Unit]
 Description=Clash TProxy
 After=network.target
@@ -103,3 +124,33 @@ run() {
     $SURUN "setcap 'cap_net_admin,cap_net_bind_service=+ep' $CLASH_EXEC"
     $SURUN "$CLASH_EXEC -d $CLASH_PATH"
 }
+
+uninstall() {
+    echo "Uninstall clash"
+    $SURUN "rm -rf $CLASH_EXEC"
+    $SURUN "rm -rf $CLASH_PATH"
+    echo "Remove service of clash"
+    $SURUN "systemctl stop clash"
+    $SURUN "systemctl disable clash"
+    $SURUN "rm -rf $SERVICE_PATH"
+}
+
+case "$ACTION" in
+    0)
+        install_clash
+        add_user
+        create_service
+        echo "Done!"
+        echo "Enable the service by systemctl enable clash && systemctl start clash"
+        ;;
+    1)
+        run
+        ;;
+    2)
+        uninstall
+        echo "Done!"
+        ;;
+    *)
+        echo "Illegal option $ACTION"
+        ;;
+esac

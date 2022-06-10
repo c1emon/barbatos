@@ -1,3 +1,4 @@
+from tkinter.messagebox import NO
 from netaddr import IPAddress, IPSet
 
 PRIVATE_IPS = IPSet([
@@ -10,10 +11,14 @@ PRIVATE_IPS = IPSet([
     "240.0.0.0/4"
 ])
 
+FAKEIP_RANGE = None
 
 def is_public(ip):
     ip = IPAddress(ip)
     return ip.is_unicast() and not ip.is_private()
+
+def set_fakeip(ip):
+    FAKEIP_RANGE = ip
 
 def is_fakeip(ip, r):
     ip = IPAddress(ip)

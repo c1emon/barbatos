@@ -32,7 +32,7 @@ class Tproxy(app_manager.RyuApp):
         
         self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
-        set_fakeip(self.c.fakeip)
+        
         
             
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
@@ -111,14 +111,15 @@ class Tproxy(app_manager.RyuApp):
             self._dns_handler(datapath, p, ipv4_src, ipv4_dst, msg)
             return
             
+        fakeip_range = self.c.fakeip
         pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and ipv4_src in self.c.proxy_ips and (is_public(ipv4_dst) or is_fakeip(ipv4_dst)):
+        if pkg and ipv4_src in self.c.proxy_ips and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, fakeip_range)):
             self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
             self._out_traffic_handler(datapath, p, msg)
             return
             
         
-        if pkg and ipv4_dst in self.c.proxy_ips and (is_public(ipv4_src) or is_fakeip(ipv4_dst)):
+        if pkg and ipv4_dst in self.c.proxy_ips and (is_public(ipv4_src) or is_fakeip(ipv4_dst, fakeip_range)):
             self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
             self._in_traffic_handler(datapath, p, msg)
             return

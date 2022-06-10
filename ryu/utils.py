@@ -15,13 +15,9 @@ def is_public(ip):
     ip = IPAddress(ip)
     return ip.is_unicast() and not ip.is_private()
 
-def set_fakeip(ip):
-    global FAKEIPRANGE
-    FAKEIPRANGE = ip
-
-def is_fakeip(ip):
+def is_fakeip(ip, range):
     ip = IPAddress(ip)
-    return ip in FAKEIPRANGE
+    return ip in range
 
 def is_private(ip):
     return IPAddress(ip).is_private()

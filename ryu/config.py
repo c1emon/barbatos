@@ -1,6 +1,6 @@
-from tkinter.messagebox import NO
 import yaml
 from hosts import *
+from netaddr import IPNetwork
 
 class conf(object):
     def __init__(self, path) -> None:
@@ -32,6 +32,10 @@ class conf(object):
         else:
             self._redis_ip = "127.0.0.1"
             self._redis_port = 6379
+            
+        _fakeip = conf['fakeIpRange'] if "fakeIpRange" in conf.keys() else "198.18.0.0/16"
+        self._fakeip = IPNetwork(_fakeip)
+        
         
     @property 
     def proxy_ips(self):
@@ -48,6 +52,10 @@ class conf(object):
     @property
     def redis_port(self):
         return self._redis_port
+    
+    @property
+    def fakeip(self):
+        self._fakeip
         
     def __str__(self):
         s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)

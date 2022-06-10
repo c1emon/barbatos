@@ -10,9 +10,18 @@ PRIVATE_IPS = IPSet([
     "240.0.0.0/4"
 ])
 
+FAKEIP_RANGE = None
+
 def is_public(ip):
     ip = IPAddress(ip)
     return ip.is_unicast() and not ip.is_private()
+
+def set_fakeip(ip):
+    FAKEIP_RANGE = ip
+
+def is_fakeip(ip, r):
+    ip = IPAddress(ip)
+    return ip in r
 
 def is_private(ip):
     return IPAddress(ip).is_private()

@@ -90,8 +90,8 @@ Type=simple
 Restart=on-failure
 
 ExecStart=ryu-manager /etc/ryu_app/traffic_processor.py
-ExecReload=/bin/kill -s HUP $MAINPID
-ExecStop=/bin/kill -s HUP $MAINPID
+ExecReload=/bin/kill -s HUP \$MAINPID
+ExecStop=/bin/kill -s HUP \$MAINPID
 KillMode=process
 TimeoutStopSec=5
 

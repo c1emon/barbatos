@@ -61,7 +61,7 @@ fi
 install_dependencies() {
     $SURUN 'apt update >/dev/null'
     $SURUN 'apt -y upgrade >/dev/null'
-    $SURUN 'apt -y install python3-pip redis >/dev/null's
+    $SURUN 'apt -y install python3-pip redis >/dev/null'
 }
 
 install_ovs() {

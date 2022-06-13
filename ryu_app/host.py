@@ -2,6 +2,7 @@ from netaddr import IPAddress, EUI, mac_unix_expanded
 import uuid
 
 class host(object):
+    
     def __init__(self, ip=None, mac=None, name=None) -> None:
         assert ip or mac
         

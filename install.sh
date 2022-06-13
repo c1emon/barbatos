@@ -1,13 +1,26 @@
 #!/usr/bin/env sh
 
+set -e
+
+SERVICE_NAME="ryu-app.service"
 PIP_SRC="-i https://pypi.tuna.tsinghua.edu.cn/simple"
 
+ACTION=0
 DRY_RUN=${DRY_RUN:-}
 while [ $# -gt 0 ]; do
 	case "$1" in
 		--dry-run)
 			DRY_RUN=1
 			;;
+        install)
+			ACTION=0
+			;;
+        run)
+            ACTION=1
+            ;;
+        uninstall)
+            ACTION=2
+            ;;
 		--*)
 			echo "Illegal option $1"
 			;;
@@ -15,23 +28,7 @@ while [ $# -gt 0 ]; do
 	shift $(( $# > 0 ? 1 : 0 ))
 done
 
-command_exists() {
-	command -v "$@" > /dev/null 2>&1
-}
-
-sh_c='sh -c'
-if [ "$(id -un 2>/dev/null || true)" != 'root' ]; then
-    if command_exists sudo; then
-        sh_c='sudo -E sh -c'
-    elif command_exists su; then
-        sh_c='su -c'
-    else
-        echo "insufficient permissions"
-        exit 1
-    fi
-fi
-
-is_dry_run() {
+is_dryrun() {
 	if [ -z "$DRY_RUN" ]; then
 		return 1
 	else
@@ -39,27 +36,91 @@ is_dry_run() {
 	fi
 }
 
-if is_dry_run; then
-	sh_c="echo"
+cmd_exists() {
+	command -v "$@" > /dev/null 2>&1
+}
+
+RUN="sh -c"
+SURUN="sudo -E sh -c"
+if [ "$(id -un 2>/dev/null || true)" != 'root' ]; then
+    if cmd_exists sudo; then
+        SURUN='sudo -E sh -c'
+    elif cmd_exists su; then
+        SURUN='su -c'
+    else
+        echo "insufficient permissions"
+        exit 1
+    fi
+fi
+
+if is_dryrun; then
+	RUN="echo"
+    SURUN="echo sudo"
 fi
 
 install_dependencies() {
-    $sh_c 'apt update >/dev/null'
-    $sh_c 'apt -y upgrade >/dev/null'
-    $sh_c 'apt -y install python3-pip >/dev/null'
+    $SURUN 'apt update >/dev/null'
+    $SURUN 'apt -y upgrade >/dev/null'
+    $SURUN 'apt -y install python3-pip redis >/dev/null'
 }
 
 install_ovs() {
-    $sh_c 'apt -y install openvswitch-switch >/dev/null'
+    $SURUN 'apt -y install openvswitch-switch >/dev/null'
 }
 
 install_ruy() {
 	# bug fix: 
 	# ImportError: cannot import name 'ALREADY_HANDLED' from 'eventlet.wsgi' (/usr/local/lib/python3.8/dist-packages/eventlet/wsgi.py)
-	$sh_c "pip3 install eventlet==0.30.2 $PIP_SRC >/dev/null"
-    $sh_c "pip3 install ryu $PIP_SRC >/dev/null"
+	$SURUN "pip3 install -r requirements.txt $PIP_SRC >/dev/null"
     echo "Ryu sdn controller installed"
-    echo "To start a ryu app: ryu-manager yourapp.py"
+    $SURUN "cp -r ./ryu_app /etc"
 }
 
-install_dependencies
+create_service() {
+
+    echo "Create service ${SERVICE_NAME}"
+    
+    SERVICE=$(cat <<- EOF
+[Unit]
+Description=RYU APP
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+
+ExecStart=ryu-manager /etc/ryu_app/traffic_processor.py
+ExecReload=/bin/kill -s HUP \$MAINPID
+ExecStop=/bin/kill -s HUP \$MAINPID
+KillMode=process
+TimeoutStopSec=5
+
+
+[Install]
+WantedBy=multi-user.target
+EOF
+)
+$SURUN "echo '$SERVICE' >> /lib/systemd/system/${SERVICE_NAME}"
+    
+    echo "Enable the service by systemctl enable ${SERVICE_NAME} && systemctl start ${SERVICE_NAME}"
+}
+
+case "$ACTION" in
+    0)
+        install_dependencies
+        install_ovs
+        install_ruy
+        create_service
+        echo "Done!"
+        ;;
+    1)
+        run
+        ;;
+    2)
+        uninstall
+        echo "Done!"
+        ;;
+    *)
+        echo "Illegal option $ACTION"
+        ;;
+esac

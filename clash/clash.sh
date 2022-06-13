@@ -7,7 +7,7 @@ USER="clash"
 CLASH_PATH="/etc/clash"
 CLASH_EXEC="/usr/local/bin/clash"
 
-SERVICE_PATH="/lib/systemd/system/clash.service"
+SERVICE_NAME="clash.service"
 ACTION=0
 DRY_RUN=${DRY_RUN:-}
 while [ $# -gt 0 ]; do
@@ -110,14 +110,19 @@ Restart=on-failure
 ExecStartPre=+/usr/bin/sh $CLASH_PATH/iptables.sh clean
 ExecStart=$CLASH_EXEC -d $CLASH_PATH
 ExecStartPost=+/usr/bin/sh $CLASH_PATH/iptables.sh set
-
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=process
+TimeoutStopSec=5
 ExecStopPost=+/usr/bin/sh $CLASH_PATH/iptables.sh clean
 
 [Install]
 WantedBy=multi-user.target
 EOF
 )
-$SURUN "echo '$SERVICE' >> $SERVICE_PATH"
+$SURUN "echo '$SERVICE' >> /lib/systemd/system/${SERVICE_NAME}"
+
+    echo "Enable the service by systemctl enable ${SERVICE_NAME} && systemctl start ${SERVICE_NAME}"
+    
 }
 
 run() {
@@ -141,7 +146,6 @@ case "$ACTION" in
         add_user
         create_service
         echo "Done!"
-        echo "Enable the service by systemctl enable clash && systemctl start clash"
         ;;
     1)
         run

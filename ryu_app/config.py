@@ -1,5 +1,5 @@
 import yaml
-from hosts import *
+from host import *
 from netaddr import IPNetwork
 
 class conf(object):
@@ -21,23 +21,19 @@ class conf(object):
     def read_config(self):
         with open(self._path, 'r') as f:
             conf = yaml.safe_load(f)
+            
         for h in conf["host"]:
             self.proxy_hosts.append(host(**h))
         self.default_gateway = host(**conf["default_gateway"][0])
         self.proxy_gateway = host(**conf["proxy_gateway"][0])
         
-        if "redis" in conf.keys():
-            self._redis_ip = conf['redis']['ip'] if "ip" in conf['redis'].keys() else "127.0.0.1"
-            self._redis_port = int(conf['redis']['port']) if "port" in conf['redis'].keys() else 6379
-        else:
-            self._redis_ip = "127.0.0.1"
-            self._redis_port = 6379
-            
-        _fakeip = conf['fakeIpRange'] if "fakeIpRange" in conf.keys() else "198.18.0.0/16"
-        self._fakeip = IPNetwork(_fakeip)
+        _redis_conf = conf.get("redis", {"ip": "127.0.0.1", "port": 6379})
+        self._redis_ip = str(_redis_conf.get("ip", "127.0.0.1"))
+        self._redis_port = int(_redis_conf.get("port", 6379))
         
+        self._fakeip = IPNetwork(conf.get('fakeIpRange', "198.18.0.0/16"))
         
-    @property 
+    @property
     def proxy_ips(self):
         return self._proxy_ips
     

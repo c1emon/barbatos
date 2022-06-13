@@ -25,5 +25,3 @@ def is_fakeip(ip, r):
 
 def is_private(ip):
     return IPAddress(ip).is_private()
-
-# print(str(PRIVATE_IPS.iter_cidrs()[0]))

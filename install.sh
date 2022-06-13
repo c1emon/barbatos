@@ -2,6 +2,7 @@
 
 set -e
 
+APP_PATH="/etc/ryu_app"
 SERVICE_NAME="ryu-app.service"
 PIP_SRC="-i https://pypi.tuna.tsinghua.edu.cn/simple"
 
@@ -89,7 +90,8 @@ After=network.target
 Type=simple
 Restart=on-failure
 
-ExecStart=ryu-manager /etc/ryu_app/traffic_processor.py
+WorkingDirectory=${APP_PATH}
+ExecStart=ryu-manager ${APP_PATH}/traffic_processor.py
 ExecReload=/bin/kill -s HUP \$MAINPID
 ExecStop=/bin/kill -s HUP \$MAINPID
 KillMode=process

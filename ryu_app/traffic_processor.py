@@ -1,5 +1,5 @@
 from ryu.base import app_manager
-from ryu.controller import ofp_event
+from ryu.controller import ofp_event, dpset
 from ryu.controller.handler import set_ev_cls, MAIN_DISPATCHER, CONFIG_DISPATCHER
 
 from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
@@ -22,20 +22,23 @@ class Tproxy(app_manager.RyuApp):
     def __init__(self, *_args, **_kwargs):
         super(Tproxy, self).__init__(*_args, **_kwargs)
         self.name = self.__class__.__name__
-        if hasattr(self.__class__, 'LOGGER_NAME'):
-            self.logger = logging.getLogger(self.__class__.LOGGER_NAME)
-        else:
-            self.logger = logging.getLogger(self.name)
-        self.dns_req = {}
+        self.logger = logging.getLogger(self.__class__.LOGGER_NAME) \
+            if hasattr(self.__class__, 'LOGGER_NAME') else logging.getLogger(self.name)
+        self.dpset = _kwargs['dpset']
         
         self.c = conf("barbatos.yaml")
-        
         self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
-        self.logger.debug("fakeip: %s", self.c.fakeip)
         set_fakeip(self.c.fakeip)
+
+    def mod(self):
+        datapath = self.dpset.get_all()[0][1]
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+    
+    def close(self):
+        print("invoke close method")
         
-            
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
@@ -49,7 +52,14 @@ class Tproxy(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        dns_msg = dns.message.from_wire(pkg.protocols[-1])
+        try:
+            dns_msg = dns.message.from_wire(pkg.protocols[-1])
+        except Exception as e:
+            self.logger.warning(e)
+            actions = [
+                parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
+            send_packet_out(datapath, actions, msg.buffer_id, pkg)
+            
         id = "0x%x" % dns_msg.id
         if not dns_msg.flags & dns.flags.QR:
             self.logger.debug("dns query(%s -> %s[%s]): %s", ipv4_src, ipv4_dst, self.c.proxy_gateway.ip, id)
@@ -112,15 +122,14 @@ class Tproxy(app_manager.RyuApp):
             self._dns_handler(datapath, p, ipv4_src, ipv4_dst, msg)
             return
             
-        fakeip_range = self.c.fakeip
         pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and (eth_pkg.src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, fakeip_range)):
+        if pkg and (eth_pkg.src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, self.c.fakeip)):
             self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
             self._out_traffic_handler(datapath, p, msg)
             return
             
         
-        if pkg and (eth_pkg.dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, fakeip_range)):
+        if pkg and (eth_pkg.dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, self.c.fakeip)):
             self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
             self._in_traffic_handler(datapath, p, msg)
             return

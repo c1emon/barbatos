@@ -42,6 +42,10 @@ class conf(object):
         self._fakeip = IPNetwork(conf.get('fakeIpRange', "198.18.0.0/16"))
         
     @property
+    def path(self):
+        return self._path
+        
+    @property
     def proxy_ips(self):
         return self._proxy_ips
     

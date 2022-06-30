@@ -7,7 +7,6 @@ from ryu.ofproto import ofproto_v1_3
 
 from actions import *
 from utils import *
-from handler import *
 from config import *
 from dns_redis import *
 
@@ -24,9 +23,10 @@ class Tproxy(app_manager.RyuApp):
         self.name = self.__class__.__name__
         self.logger = logging.getLogger(self.__class__.LOGGER_NAME) \
             if hasattr(self.__class__, 'LOGGER_NAME') else logging.getLogger(self.name)
-        self.dpset = _kwargs['dpset']
+        # self.dpset = _kwargs['dpset']
         
-        self.c = conf("barbatos.yaml")
+        self.c = conf()
+        self.logger.info("read config from: %s", self.c.path)
         self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
         set_fakeip(self.c.fakeip)

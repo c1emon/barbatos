@@ -1,10 +1,18 @@
+from threading import local
 import yaml
 from host import *
 from netaddr import IPNetwork
+from pathlib import Path
 
+def _path_adapter(name, path):
+    _path = Path.cwd() if Path.cwd().joinpath(name).is_file() else Path(path)
+    conf_path = _path.joinpath(name)
+    return str(conf_path)
+    
 class conf(object):
-    def __init__(self, path) -> None:
-        self._path = path
+    def __init__(self, name="barbatos.yaml", path="/etc/ryu_app") -> None:
+        self._path = _path_adapter(name, path)
+        
         self.proxy_hosts = []
         self.default_gateway = None
         self.proxy_gateway = None

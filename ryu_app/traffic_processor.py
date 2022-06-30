@@ -17,13 +17,16 @@ import logging
 
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    _CONTEXTS = {
+        'dpset': dpset.DPSet,
+    }
     
     def __init__(self, *_args, **_kwargs):
         super(Tproxy, self).__init__(*_args, **_kwargs)
         self.name = self.__class__.__name__
         self.logger = logging.getLogger(self.__class__.LOGGER_NAME) \
             if hasattr(self.__class__, 'LOGGER_NAME') else logging.getLogger(self.name)
-        # self.dpset = _kwargs['dpset']
+        self.dpset = _kwargs['dpset']
         
         self.c = conf()
         self.logger.info("read config from: %s", self.c.path)

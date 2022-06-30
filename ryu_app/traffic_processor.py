@@ -31,13 +31,13 @@ class Tproxy(app_manager.RyuApp):
         
         set_fakeip(self.c.fakeip)
 
-    def mod(self):
+    def update_flow(self):
         datapath = self.dpset.get_all()[0][1]
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
     
     def close(self):
-        print("invoke close method")
+        self.logger.info("exit app")
         
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
@@ -56,9 +56,7 @@ class Tproxy(app_manager.RyuApp):
             dns_msg = dns.message.from_wire(pkg.protocols[-1])
         except Exception as e:
             self.logger.warning(e)
-            actions = [
-                parser.OFPActionOutput(ofproto.OFPP_NORMAL, 0)]
-            send_packet_out(datapath, actions, msg.buffer_id, pkg)
+            send_packet_out_normal(datapath, msg.buffer_id, pkg)
             
         id = "0x%x" % dns_msg.id
         if not dns_msg.flags & dns.flags.QR:
@@ -107,30 +105,35 @@ class Tproxy(app_manager.RyuApp):
     def packet_in_handler(self, ev):
         msg = ev.msg
         datapath = msg.datapath
+        # TODO: identity package by cookie
+        # cookie = msg.cookie
         
-        p = packet.Packet(msg.data)
+        pkg = packet.Packet(msg.data)
         
-        eth_pkg = p.get_protocol(ethernet.ethernet)
-        ipv4_pkg = p.get_protocol(ipv4.ipv4)
-        tcp_pkg = p.get_protocol(tcp.tcp)
-        udp_pkg = p.get_protocol(udp.udp)
-        ipv4_src = ipv4_pkg.src
-        ipv4_dst = ipv4_pkg.dst
-        
-        
-        if udp_pkg and (udp_pkg.dst_port == 53 or udp_pkg.src_port == 53):
-            self._dns_handler(datapath, p, ipv4_src, ipv4_dst, msg)
-            return
-            
-        pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and (eth_pkg.src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, self.c.fakeip)):
-            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
-            self._out_traffic_handler(datapath, p, msg)
-            return
-            
-        
-        if pkg and (eth_pkg.dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, self.c.fakeip)):
-            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
-            self._in_traffic_handler(datapath, p, msg)
-            return
-        
+        for proto_pkg in pkg.protocols:
+            name = proto_pkg.protocol_name
+            if name == "ethernet":
+                eth_src = proto_pkg.src
+                eth_dst = proto_pkg.dst
+            elif name == "ipv4":
+                ipv4_src = proto_pkg.src
+                ipv4_dst = proto_pkg.dst
+            elif name == "udp" or name == "tcp":
+                src_port = proto_pkg.src_port
+                dst_port = proto_pkg.dst_port
+                
+                if name == "udp" and (src_port == 53 or dst_port ==53):
+                    self._dns_handler(datapath, pkg, ipv4_src, ipv4_dst, msg)
+                    return
+                
+                if (eth_src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, self.c.fakeip)):
+                    self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", name, ipv4_src, eth_src, ipv4_dst, eth_dst, self.c.proxy_gateway.mac)
+                    self._out_traffic_handler(datapath, pkg, msg)
+                    return
+                
+                if (eth_dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, self.c.fakeip)):
+                    self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", name, ipv4_src, eth_src, self.c.default_gateway.mac, ipv4_dst, eth_dst)
+                    self._in_traffic_handler(datapath, pkg, msg)
+                    return
+
+        send_packet_out_normal(datapath, msg.buffer_id, pkg)

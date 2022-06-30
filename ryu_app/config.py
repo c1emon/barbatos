@@ -54,8 +54,7 @@ class conf(object):
         return self._fakeip
         
     def __str__(self):
-        s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)
-        for h in self.proxy_hosts:
-            s += ("%s\n" % h)
-        return s
-        
+        return ("default gateway: %s\n" + \
+             "proxy   gateway: %s\n" + \
+             "proxy     hosts: %s\n" + \
+             "redis: %s") % (self.default_gateway, self.proxy_gateway, " ".join(self.proxy_hosts), "%s:%s" % (self._redis_ip, self._redis_port))

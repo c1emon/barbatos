@@ -153,6 +153,18 @@ def build_flow(datapath, priority, actions=[], match={}, **kwargs):
     return parser.OFPFlowMod(datapath=datapath, priority=priority,
                             match=match, instructions=inst)
 
+def send_packet_out_normal(datapath, buffer_id, data):
+    ofproto = datapath.ofproto
+    parser = datapath.ofproto_parser
+    actions = [parser.OFPActionOutput(ofproto.OFPP_NORMAL, 
+                                        ofproto.OFPCML_NO_BUFFER)]
+    
+    out = parser.OFPPacketOut(
+            datapath=datapath, buffer_id=buffer_id, 
+            in_port=ofproto.OFPP_CONTROLLER,
+            actions=actions, data=data)
+    datapath.send_msg(out)
+    
 def send_packet_out(datapath, actions, buffer_id, data):
     ofproto = datapath.ofproto
     parser = datapath.ofproto_parser

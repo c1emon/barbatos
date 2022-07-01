@@ -1,10 +1,18 @@
+from threading import local
 import yaml
 from host import *
 from netaddr import IPNetwork
+from pathlib import Path
 
+def _path_adapter(name, path):
+    _path = Path.cwd() if Path.cwd().joinpath(name).is_file() else Path(path)
+    conf_path = _path.joinpath(name)
+    return str(conf_path)
+    
 class conf(object):
-    def __init__(self, path) -> None:
-        self._path = path
+    def __init__(self, name="barbatos.yaml", path="/etc/ryu_app") -> None:
+        self._path = _path_adapter(name, path)
+        
         self.proxy_hosts = []
         self.default_gateway = None
         self.proxy_gateway = None
@@ -34,6 +42,10 @@ class conf(object):
         self._fakeip = IPNetwork(conf.get('fakeIpRange', "198.18.0.0/16"))
         
     @property
+    def path(self):
+        return self._path
+        
+    @property
     def proxy_ips(self):
         return self._proxy_ips
     
@@ -54,8 +66,7 @@ class conf(object):
         return self._fakeip
         
     def __str__(self):
-        s = "default gateway %s\nproxy   gateway %s\nproxy hosts:\n" % (self.default_gateway, self.proxy_gateway)
-        for h in self.proxy_hosts:
-            s += ("%s\n" % h)
-        return s
-        
+        return ("default gateway: %s\n" + \
+             "proxy   gateway: %s\n" + \
+             "proxy     hosts: %s\n" + \
+             "redis: %s") % (self.default_gateway, self.proxy_gateway, " ".join(self.proxy_hosts), "%s:%s" % (self._redis_ip, self._redis_port))

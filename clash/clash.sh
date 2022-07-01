@@ -74,7 +74,7 @@ install_clash() {
         $SURUN "mv \"/tmp/clash-linux-amd64-2022.03.21\" $CLASH_EXEC"
     fi
     
-    $RUN "chmod +x $CLASH_EXEC"
+    $SURUN "chmod +x $CLASH_EXEC"
     $SURUN "mkdir $CLASH_PATH"
     $SURUN "cp iptables.sh $CLASH_PATH"
 }

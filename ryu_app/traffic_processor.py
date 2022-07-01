@@ -1,5 +1,5 @@
 from ryu.base import app_manager
-from ryu.controller import ofp_event
+from ryu.controller import ofp_event, dpset
 from ryu.controller.handler import set_ev_cls, MAIN_DISPATCHER, CONFIG_DISPATCHER
 
 from ryu.lib.packet import packet, ethernet, ipv4, tcp, udp
@@ -7,7 +7,6 @@ from ryu.ofproto import ofproto_v1_3
 
 from actions import *
 from utils import *
-from handler import *
 from config import *
 from dns_redis import *
 
@@ -18,24 +17,31 @@ import logging
 
 class Tproxy(app_manager.RyuApp):
     OFP_VERSIONS = [ofproto_v1_3.OFP_VERSION]
+    _CONTEXTS = {
+        'dpset': dpset.DPSet,
+    }
     
     def __init__(self, *_args, **_kwargs):
         super(Tproxy, self).__init__(*_args, **_kwargs)
         self.name = self.__class__.__name__
-        if hasattr(self.__class__, 'LOGGER_NAME'):
-            self.logger = logging.getLogger(self.__class__.LOGGER_NAME)
-        else:
-            self.logger = logging.getLogger(self.name)
-        self.dns_req = {}
+        self.logger = logging.getLogger(self.__class__.LOGGER_NAME) \
+            if hasattr(self.__class__, 'LOGGER_NAME') else logging.getLogger(self.name)
+        self.dpset = _kwargs['dpset']
         
-        self.c = conf("barbatos.yaml")
-        
+        self.c = conf()
+        self.logger.info("read config from: %s", self.c.path)
         self.dr = dns_redis(self.c.redis_ip, self.c.redis_port)
         
-        self.logger.debug("fakeip: %s", self.c.fakeip)
         set_fakeip(self.c.fakeip)
+
+    def update_flow(self):
+        datapath = self.dpset.get_all()[0][1]
+        ofproto = datapath.ofproto
+        parser = datapath.ofproto_parser
+    
+    def close(self):
+        self.logger.info("exit app")
         
-            
     @set_ev_cls(ofp_event.EventOFPSwitchFeatures, CONFIG_DISPATCHER)
     def switch_features_handler(self, ev):
         datapath = ev.msg.datapath
@@ -49,7 +55,12 @@ class Tproxy(app_manager.RyuApp):
         ofproto = datapath.ofproto
         parser = datapath.ofproto_parser
         
-        dns_msg = dns.message.from_wire(pkg.protocols[-1])
+        try:
+            dns_msg = dns.message.from_wire(pkg.protocols[-1])
+        except Exception as e:
+            self.logger.warning(e)
+            send_packet_out_normal(datapath, msg.buffer_id, pkg)
+            
         id = "0x%x" % dns_msg.id
         if not dns_msg.flags & dns.flags.QR:
             self.logger.debug("dns query(%s -> %s[%s]): %s", ipv4_src, ipv4_dst, self.c.proxy_gateway.ip, id)
@@ -97,31 +108,35 @@ class Tproxy(app_manager.RyuApp):
     def packet_in_handler(self, ev):
         msg = ev.msg
         datapath = msg.datapath
+        # TODO: identity package by cookie
+        # cookie = msg.cookie
         
-        p = packet.Packet(msg.data)
+        pkg = packet.Packet(msg.data)
         
-        eth_pkg = p.get_protocol(ethernet.ethernet)
-        ipv4_pkg = p.get_protocol(ipv4.ipv4)
-        tcp_pkg = p.get_protocol(tcp.tcp)
-        udp_pkg = p.get_protocol(udp.udp)
-        ipv4_src = ipv4_pkg.src
-        ipv4_dst = ipv4_pkg.dst
-        
-        
-        if udp_pkg and (udp_pkg.dst_port == 53 or udp_pkg.src_port == 53):
-            self._dns_handler(datapath, p, ipv4_src, ipv4_dst, msg)
-            return
-            
-        fakeip_range = self.c.fakeip
-        pkg = tcp_pkg if tcp_pkg else udp_pkg
-        if pkg and (eth_pkg.src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, fakeip_range)):
-            self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", pkg.protocol_name, ipv4_src, eth_pkg.src, ipv4_dst, eth_pkg.dst, self.c.proxy_gateway.mac)
-            self._out_traffic_handler(datapath, p, msg)
-            return
-            
-        
-        if pkg and (eth_pkg.dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, fakeip_range)):
-            self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", pkg.protocol_name, ipv4_src, eth_pkg.src, self.c.default_gateway.mac, ipv4_dst, eth_pkg.dst)
-            self._in_traffic_handler(datapath, p, msg)
-            return
-        
+        for proto_pkg in pkg.protocols:
+            name = proto_pkg.protocol_name
+            if name == "ethernet":
+                eth_src = proto_pkg.src
+                eth_dst = proto_pkg.dst
+            elif name == "ipv4":
+                ipv4_src = proto_pkg.src
+                ipv4_dst = proto_pkg.dst
+            elif name == "udp" or name == "tcp":
+                src_port = proto_pkg.src_port
+                dst_port = proto_pkg.dst_port
+                
+                if name == "udp" and (src_port == 53 or dst_port ==53):
+                    self._dns_handler(datapath, pkg, ipv4_src, ipv4_dst, msg)
+                    return
+                
+                if (eth_src in self.c.proxy_macs or ipv4_src in self.c.proxy_ips) and (is_public(ipv4_dst) or is_fakeip(ipv4_dst, self.c.fakeip)):
+                    self.logger.debug("%s: %s(%s) ---> %s[(%s) map to (%s)]", name, ipv4_src, eth_src, ipv4_dst, eth_dst, self.c.proxy_gateway.mac)
+                    self._out_traffic_handler(datapath, pkg, msg)
+                    return
+                
+                if (eth_dst in self.c.proxy_macs or ipv4_dst in self.c.proxy_ips) and (is_public(ipv4_src) or is_fakeip(ipv4_dst, self.c.fakeip)):
+                    self.logger.debug("%s: %s[(%s) map to (%s)] ---> %s(%s)", name, ipv4_src, eth_src, self.c.default_gateway.mac, ipv4_dst, eth_dst)
+                    self._in_traffic_handler(datapath, pkg, msg)
+                    return
+
+        send_packet_out_normal(datapath, msg.buffer_id, pkg)
